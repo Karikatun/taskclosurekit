@@ -458,7 +458,7 @@ def source_bindings(repo, sources, entries, index_entries, budget):
     return bindings
 
 
-def capture(repo, contract_path, sources=()):
+def capture(repo, contract_path, sources=(), *, program_roots=("taskproof", "tests")):
     budget = Budget()
     repo = safe_path(repo)
     git = git_binary()
@@ -473,7 +473,7 @@ def capture(repo, contract_path, sources=()):
         raise RuntimeError("snapshot_race")
     program_root = Path(__file__).resolve().parents[1]
     program = {}
-    for name in ("taskproof", "tests"):
+    for name in program_roots:
         for path, value in inventory(program_root / name, budget).items():
             program[name + "/" + path] = value
     executable = regular(git, budget)[0]
