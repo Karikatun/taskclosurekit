@@ -1,0 +1,49 @@
+{
+  "schema": "taskclosurekit/v2",
+  "task": {
+    "id": "whitespace-demo-v2",
+    "title": "Проверить staged whitespace в одном файле"
+  },
+  "repository": "/tmp/taskclosurekit-demo",
+  "authority": {
+    "task": {
+      "issuer": "human"
+    },
+    "read": [
+      "README.md",
+      "src/foo.py"
+    ],
+    "write": [
+      "src/foo.py"
+    ],
+    "execution": {
+      "presets": [
+        "git-index-whitespace-v1"
+      ]
+    }
+  },
+  "sources": [
+    "README.md"
+  ],
+  "acceptance": [
+    {
+      "id": "staged-whitespace",
+      "required": true,
+      "evidence": {
+        "all_of": [
+          "git-index-whitespace-v1"
+        ]
+      }
+    }
+  ],
+  "review": {
+    "required": true,
+    "independence": "not_required"
+  },
+  "claim": {
+    "type": "configured-acceptance-satisfied"
+  },
+  "closure": {
+    "authority": "human"
+  }
+}

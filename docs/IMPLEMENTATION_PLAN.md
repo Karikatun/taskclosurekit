@@ -1,31 +1,50 @@
-# Первый срез реализации
+# Проверяемый срез TaskClosureKit v2
 
-## Наблюдаемый результат
+## Область
 
-В одноразовом локальном репозитории пользователь создаёт контракт, фиксирует baseline, запускает одну согласованную проверку, прикладывает review и закрывает задачу. CLI принимает допустимый цикл и объясняет каждую блокировку. Срез конечный: один fixture, один preset и минимальное локальное хранение; расширение по результату, без общей платформы заранее.
+Staged migration заменяет product semantics, сохраняя строгие primitives v1. Один claim `configured-acceptance-satisfied`, одна исполняемая capability `git-index-whitespace-v1`, local HMAC journal, отдельное authority/review/closure confirmation и versioned JSON CLI. Новые зависимости, сетевые integrations, installer и release не нужны.
 
-## Порядок
+Исходный v1 context сохранён в [CLI v1](CLI_V1.md). [Архитектурная карта](ARCHITECTURE_V2.md) задаёт Keep/Extract/Replace/Deprecate/Delete later. [Product boundaries](PRODUCT_BOUNDARIES.md) ограничивают scope.
 
-1. До кода определить минимальный контракт, квитанцию и условия переходов. Отделить полномочия от данных и доверенный захват от импортированного отчёта. Выбрать уже доступный test runner; не устанавливать зависимость по предположению.
-2. Начать с failing integration test: закрытие без обязательного успешного check receipt отклоняется. Затем реализовать `contract → baseline → actual check receipt → review → close` для одного фиксированного безопасного preset в disposable repo. Пользовательский shell не принимать.
-3. Добавить проверки из таблицы. Отдельно проверить успех цикла с подтверждённым требованием review; независимость объявлять только при наличии доказательств среды. Недоступный доверенный способ проверки — явный blocker, не фиктивный успех.
-4. Проверить `resume` после прерывания: он показывает последнее подтверждённое состояние и следующий шаг без исполнения команды. Получить независимый review точного снимка; исправление требует повторной проверки изменённой области.
-5. После готовности среза завести один интеграционный fixture для `web-app-template`, сверить его реальные инструкции и checks. Не переносить runtime, процесс и закрытый исходный код в шаблон автоматически.
+## Vertical slices и условия
 
-## Приёмка среза
-
-| Сценарий | Ожидаемый результат |
+| Срез | Проверяемый результат |
 | --- | --- |
-| Допустимый контракт и реальные успешные check/review для текущего снимка | Цикл закрывается; квитанции доступны |
-| Пропуск шага, недостающий receipt, failed check, timeout или неизвестная обязательная независимость | Закрытие отклоняется с конкретной причиной |
-| Изменение контракта/входа, кода, правил, теста, preset/аргументов после проверки | Зависимое доказательство устаревает; закрытие отклоняется |
-| Подмена receipt, хеша, содержимого журнала или связанного входа | Нарушение привязки обнаруживается; закрытие отклоняется |
-| Возобновление после прерванного запуска | Показано подтверждённое состояние; побочный эффект не повторяется |
+| Основной flow | Контракт принят → human authority подтверждена → baseline создан → trusted preset реально запущен → evidence привязано к exact snapshot → review → evaluate даёт CLAIMABLE → отдельный authorized close сохраняет bounded Claim/Closure |
+| Stale input | Разрешённое изменение после PASS сохраняет исторический результат, но делает evidence STALE_INPUT и блокирует claim; повторный check/review восстанавливает current applicability |
+| Scope violation | Изменены разрешённый `src/foo.py` и неразрешённый `README.md`: даже PASS не устраняет `write_scope_violation` |
+| Unknown independence | Review присутствует, policy требует independence, trusted proof отсутствует: UNKNOWN и NOT_CLAIMABLE |
+| Handoff | Новый процесс читает current/stale evidence, missing requirements и next action из persisted transaction без transcript |
+| External evidence seam | Fake adapter принимает measured_ci только после repository/commit/exact snapshot/workflow/check/criterion binding; никаких network calls |
 
-Проверить границы файловой области, скрытые/игнорируемые влияющие входы, symlink за пределы scope, неизвестные поля и лимиты до дорогого чтения. Для запуска подтвердить таймаут, ограничение вывода, запрет произвольного shell и очистку журнала до сохранения. Тесты не должны читать реальные секреты или писать в исходные проекты.
+## Обязательные invariants
 
-## Что считается доказанным
+1. Agent assertion не становится measured/human evidence; downstream presentation не меняет trust.
+2. Evidence не расширяет authority, review не меняет acceptance.
+3. Historical PASS со stale/unknown freshness не удовлетворяет required criterion.
+4. Changed authority или execution environment инвалидирует dependent evaluation.
+5. Out-of-scope write блокирует closure.
+6. Review относится к exact contract/snapshot/evidence set; изменение любого binding блокирует применимость.
+7. Required independence + UNKNOWN блокирует, JSON assertion не устанавливает PROVEN.
+8. CLAIMABLE не закрывает task автоматически; close отдельно сохраняет конкретный limited claim.
+9. Неизвестное состояние, malformed/tampered/unsupported records fail-closed.
+10. Domain не импортирует CLI/IO; контракт не определяет executable/shell.
+11. Legacy CLI сохраняет отдельную схему, v1 journals не принимаются v2.
 
-Успешный тест подтверждает только проверенную границу. Хеши подтверждают идентичность, но не семантическое качество. Политика read-only не доказывает enforcement. Независимое review нельзя заменить структурно правильной квитанцией. Локальный результат отдельно от commit, push, CI и deployment.
+## Проверки
 
-После среза оценить пробелы и выбрать следующий небольшой шаг. Отложены общий executor, универсальный installer, поддержка нескольких провайдеров, UI, сервер, база данных, аналитика, CI и hosting.
+Реальные CLI integration tests выполняются на одноразовых нейтральных Git fixtures с исходным commit и loose objects. Они запускают trusted preset, проверяют negative branches, fresh process handoff и persistence. Domain tests проверяют composition/trust/claim invariants; architecture tests — границы imports. Legacy regression suite проверяет сохранение path/snapshot/runner/integrity behavior. Тесты не читают реальные secrets и не запускают чужие project scripts.
+
+Общий локальный runner без создания bytecode:
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+При запуске в агентской среде применяется обязательный локальный RTK wrapper и `PYTHONDONTWRITEBYTECODE=1`. Фактические результаты, platform-specific skips и независимый review относятся к конкретному проверенному состоянию и указываются в отчёте. План не утверждает, что они уже выполнены.
+
+## Definition of Done
+
+Новая модель реально используется CLI; реальный end-to-end flow и все negative invariants проходят; legacy/security regression не выявляет ухудшения; обязательный review выполнен для точного состояния. JSON envelope различает operational status и claim decision, machine consumer не парсит prose. Документы отражают actual CLI и trust limits; version bump допустим лишь после полного working slice и migration path.
+
+Это local readiness. Commit, push, CI, publication и deployment имеют собственные подтверждения и не следуют из тестов. В первом срезе не реализуются SDK/hook, general executor, policy DSL, memory, UI/server/database, network CI adapters, public attestations или installer.

@@ -1,103 +1,105 @@
-# TaskProof CLI
+# TaskClosureKit CLI v2
 
-Это руководство описывает реализованный локальный CLI. Команды работают с одним run и одним заранее заданным Git preset. Они не исполняют shell-команды из контракта.
+Локальный namespace — `python3 -m taskclosurekit`, без установки или внешних dependencies. Legacy `python3 -m taskproof` сохраняет отдельный [CLI v1](CLI_V1.md). Ни контракт, ни review JSON не исполняют произвольный shell.
 
-## Запуск
+## Запуск и файлы
 
-Из каталога репозитория:
+Из корня этого проекта запускаются команды ниже. `--store` обязателен; пути repository/store/contract/review абсолютны и нормализованы. Store располагается физически вне проверяемого repository, contract/review — вне repository и store. Existing symlink components и aliases проверяются прежними safe-path helpers до создания/чтения данных; metadata источников также bound в snapshot.
+
+Демонстрационный [контракт](../examples/contract-v2.json) относится к `/tmp/taskclosurekit-demo`, пишет только `src/foo.py` и связывает `README.md` как неизменяемый источник. Чтобы использовать его, подготовьте небольшой disposable Git repository с нейтральным `README.md`, `src/foo.py` и исходным commit, затем сохраните контракт вне этого repository, например `/tmp/taskclosurekit-contract.json`. Для реальной задачи замените task id, repository и scopes в новом contract file. Не используйте эти пути как готовый production store.
+
+Поддержан обычный `.git` с SHA-1 loose objects; packs, alternates, linked worktrees, unsupported Git controls и неполные snapshots fail-closed. Все [прежние limits/path/source/Git rules](CLI_V1.md) сохраняются. Sources/read/write — точные относительные файлы или поддеревья, globs не поддерживаются. Read scope декларативен и не является host sandbox.
+
+## Основной цикл
 
 ```sh
-python3 -m taskproof --store /tmp/taskproof-store contract /tmp/taskproof-contract.json
-python3 -m taskproof --store /tmp/taskproof-store baseline
-python3 -m taskproof --store /tmp/taskproof-store check
-python3 -m taskproof --store /tmp/taskproof-store review /tmp/taskproof-review.json
-python3 -m taskproof --store /tmp/taskproof-store close
-python3 -m taskproof --store /tmp/taskproof-store resume
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store task create /tmp/taskclosurekit-contract.json --json
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store authorize --json
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store baseline --json
+# Внесите только разрешённые изменения, затем staged-ите их средствами Git.
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store check git-index-whitespace-v1 --json
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store evaluate --json
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store review --human --json
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store evaluate --json
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store close --json
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store status --next --json
 ```
 
-`--store` обязателен и должен указывать на отдельный каталог вне проверяемого репозитория. Файл контракта и файл review также держите вне него и вне хранилища. Для проверки нужен Git-репозиторий с исходным commit. Хранилище создаётся с ограниченными локальными правами доступа. Пример `/tmp` подходит для одноразовой демонстрации; для важной работы выберите подходящее локальное постоянное место и защитите его средствами хоста.
+`task create` записывает DRAFT и contract digest; он не подтверждает authority автоматически. `authorize`, `review --human` и `close` показывают в stderr local-operator prompt с exact action digest. Оператор читает относящееся к этому действию состояние и вводит digest точно. Для подтверждения stdin должен быть terminal; noninteractive bypass (`--yes`, env flag или предоставление human trust в JSON) отсутствует. `--json` делает вывод машиночитаемым, но не отменяет подтверждение. У local-operator source `host_operator_assumed=true`, `identity_verified=false`; доказательство human identity или независимости из терминала не возникает.
 
-CLI печатает JSON. При `state: "BLOCKED"` возвращает код 1. Успешные переходы возвращают код 0. `resume` — только чтение: он показывает подтверждённое состояние, причину блокировки и следующий шаг, не перезапуская проверку.
+`baseline` фиксирует исходное разрешённое состояние после authorize. `check PRESET_ID` реально выполняет выбранный trusted preset и создаёт bound measured_local evidence. В срезе существует один registry member — `git-index-whitespace-v1`, фиксированный staged whitespace Git check. Contract не меняет его command/args, cwd rules, environment или limits.
 
-## Границы путей и хранилища
+`evaluate` вычисляет текущую допустимость без запуска check и без закрытия. До обязательного review оно возвращает NOT_CLAIMABLE даже при current PASS. После review/evaluate возможен CLAIMABLE; только отдельный подтверждённый `close` сохраняет bounded Claim/Closure и CLOSED. Наличие candidate `claim` в evaluate ещё не означает recorded closure.
 
-Пути к репозиторию, контракту, review и `--store` должны быть абсолютными и нормализованными. В существующих компонентах пути CLI проверяет точное написание имени каталога или файла; компоненты-symlink отклоняются. Для проверки размещения сравнивается идентичность существующих каталогов-предков по `device/inode`; путь с регистровым или Unicode-написанием, которое файловая система разрешает в тот же каталог, отклоняется, а не принимается за внешний. Обход каталогов ограничен 10 000 записями и 10 секундами на проверку пути; обнаруженная гонка или невозможность завершить проверку приводит к отказу.
+## Machine envelope
 
-Перед созданием хранилища и записью ключа или журнала CLI проверяет, что хранилище физически расположено за пределами репозитория, а контракт — за пределами репозитория и хранилища. Чтобы узнать корень репозитория, команда `contract` сначала ограниченно разбирает JSON контракта; при запрещённом размещении она отклоняет его до создания нового хранилища и записи `DRAFT`. Команда `review` проверяет размещение файла до чтения его JSON и до записи результата review. Это локальная проверка существующих компонентов пути на текущей среде. Она не доказывает изоляцию ОС, безопасность bind mount или эквивалентное поведение на других файловых системах и хостах.
+Все существенные команды поддерживают `--json`; текущий CLI печатает JSON envelope и без этого флага. Schema — `taskclosurekit/result/v2`.
 
-## Контракт
+| Поле | Как читать |
+| --- | --- |
+| `operation`, `task_id` | Операция и task transaction |
+| `operational.status` | `ok`, `invalid_input`, `environment_error`, `internal_error` |
+| `state` | Confirmed/projected lifecycle или BLOCKED/STALE/INVALID |
+| `decision` | `CLAIMABLE`, `NOT_CLAIMABLE`, `NOT_EVALUATED` |
+| `reasons` | Machine reason codes, без необходимости парсить prose |
+| `freshness` | Список `{id, state}` для evidence applicability |
+| `next_action` | Следующий допустимый action или необходимость внешнего proof/new task |
+| `contract_digest`, `snapshot`, `evidence_set` | Bindings, когда операция их вычислила |
+| `evidence`, `review_present`, `independence` | Evidence/review projection при оценке текущего transaction |
+| `assertions` | Отдельные agent declarations: digest/metadata, без measured evidence и raw statement |
+| `claim`, `closure` | Candidate/current limited claim и отдельный persisted closure, когда существует |
+| `last_confirmed` | Последнее подтверждённое событием состояние, отдельно от current projection |
 
-Все поля обязательны, неизвестные поля отклоняются. Пути `scope` и `sources` — относительные пути внутри репозитория; абсолютные, пустые компоненты, `.` и `..` запрещены. Репозиторий задаётся нормализованным абсолютным путём. `scope` задаёт точные файлы или поддеревья, в которых Direct может менять staged и рабочие файлы во время цикла. Изменения Git controls и источников контракта блокируют проверку.
+`operational.status: "ok"` означает успешную обработку операции, включая вычисленное блокирующее решение. Оно не означает CLAIMABLE. `NOT_EVALUATED` у create/authorize/baseline не является одобрением claim. Unknown/stale evidence отражается freshness/reasons или отказом capture, а не общей зелёной operational отметкой.
 
-Компонент `.git` в `scope` и `sources` запрещён при любом регистре букв. Поддержан только обычный Git-каталог с фактическим именем `.git` в корне репозитория; имена `.GIT`, `.Git` и другие варианты регистра блокируют snapshot, в том числе после baseline. На файловой системе с учётом регистра отдельное такое имя рядом с `.git` также отклоняется. CLI не переименовывает каталоги для исправления этой неоднозначности.
+Exit codes: **0** — операция завершена без решения NOT_CLAIMABLE; **1** — решение NOT_CLAIMABLE; **2** — invalid input/state; **3** — environment/internal failure. Машинная интеграция сначала проверяет operational status, затем decision/reasons. При NOT_CLAIMABLE агент продолжает только уже разрешённую работу или сообщает конкретный blocker; это не разрешение расширять scope.
 
-### Объекты Git
+## Failure branches
 
-Для baseline и последующих снимков поддерживаются только обычные loose objects формата SHA-1: точный lowercase fanout-каталог из двух hex-символов и файл из следующих 38 hex-символов. Объект должен иметь допустимый заголовок типа `blob`, `tree`, `commit` или `tag` с объявленным размером. CLI ограниченно проверяет zlib-поток до конца, длину тела и совпадение SHA-1 с именем файла; идентичность файла сверяется с инвентарём, а инвентарь повторно снимается после чтения Git metadata. Обычный `git add` и корректно созданные loose objects поддерживаются в этом цикле.
+- Изменение разрешённого input после check: historical PASS остаётся, freshness становится STALE_INPUT, evaluate не допускает claim. Повторите check для текущего staged state, затем review для нового snapshot/evidence set.
+- Failed check/timeout/truncated capture или недостающее required evidence: claim blocked; устраняется причина, затем создаётся новая квитанция. Старый PASS не перекрывает более новый failed check.
+- Изменение файла вне write scope: `write_scope_violation`; даже зелёный check не расширяет authority. Дальнейший шаг — осмотреть фактическое состояние и создать новый согласованный task transaction, если нужен другой scope.
+- Изменение contract, source, Git controls или execution identity: authority/environment binding больше не подтверждает прежний цикл. Новый check не выдаёт новые полномочия; нужен новый task после проверки причины.
+- Review относится к прошлому snapshot или evidence set: `stale_review`; повторите review только для exact current bindings.
+- Policy `independence: required`, trusted provider отсутствует: `independence_unknown`, UNKNOWN и NOT_CLAIMABLE. Нельзя исправить этот blocker полем JSON или собственным assertion агента.
+- Malformed/tampered/unsupported journal: операция fail-closed. Не редактируйте записи вручную и не считайте HMAC proof человеческой identity.
+- После recorded closure изменение состояния не продолжает прежний claim. Сохраняется bounded historical closure; новый state требует нового task.
 
-В `.git/objects/info` и `.git/objects/pack` допустимы только пустые каталоги. Pack-файлы и индексы, commit-graph, другое содержимое `info`/`pack`, иные имена объектов, типы записей и раскладки отклоняются. Команда `contract` может создать `DRAFT` до снимка; `baseline` затем блокируется на неподдерживаемой раскладке. Во время последующих снимков такая раскладка блокирует команду до записи нового `RUNNING` или квитанции проверки.
+## Agent review import
 
-Сжатый файл объекта и объявленное тело ограничены 8 MiB каждое, заголовок с разделителем — 64 байтами. Инвентаризация, повторные чтения объектов и распаковка используют общий для снимка бюджет 64 MiB, 10 000 записей и 10 секунд. Превышение размера тела даёт `git_object_limit`; слишком большой файл, общий лимит, гонка или некорректная структура могут вернуть `file_limit`, `snapshot_limit`, `snapshot_race` или `unsupported_git_object_layout`. Повреждённый zlib-поток, заголовок, длина или лишние байты блокируются с `invalid_git_object`; несовпадение имени с хешем — с `git_object_identity_mismatch`. Для unsupported Git control metadata, включая object alternates, причина — `unsupported_git_control`.
+```sh
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store review /tmp/taskclosurekit-review.json --json
+```
 
-Эти проверки подтверждают только ограниченный формат, целостность байтов относительно имени и стабильность снимка. Они не выполняют `git fsck` и не доказывают семантическую корректность, связность графа объектов, авторство или эквивалентность Git-сборкам и файловым системам вне проверенной среды.
+Формат файла — [schema taskclosurekit/review/v2](V2_CONTRACT.md). Exact contract/snapshot/evidence-set bindings обязательны. Импорт записывает agent-attested review; `approve` в таком JSON не удовлетворяет required human review и не доказывает identity или PROVEN independence. Для локального confirmed review используется отдельный `review --human` path. Источники доверия выбирает trusted producer, не автор входного JSON.
 
-Каждый `sources` должен точно совпадать с фактическим именем обычного файла в снимке, включая регистр каждого компонента. Например, для `docs/Rules.md` запись `docs/rules.md` не принимается в baseline, даже если файловая система открывает тот же файл. Источник остаётся неизменяемым и внутри `scope`: заморожены его рабочий файл и запись Git index, включая содержимое, mode, stage и наличие записи. Поэтому изменение только index с восстановленным рабочим файлом, добавление ранее неиндексированного источника и удаление его из index блокируют цикл.
+## Agent assertion
 
-Неоднозначные имена источников в index не поддержаны. Иное написание, совпадающее с источником без учёта регистра, консервативно отклоняется на всех хостах; также отклоняются index-пути, которые текущая файловая система разрешает в тот же обычный файл, включая hard link. CLI проверяет фактическое разрешение пути без следования symlink, не переписывает Unicode или имена файлов и не заявляет одинаковую эквивалентность имён на разных файловых системах. Сохранённые снимки должны содержать согласованную привязку источников; старые снимки без неё требуют нового run.
+После authorize/baseline можно записать отдельное утверждение агента:
+
+```sh
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store attest /tmp/taskclosurekit-assertion.json --json
+```
+
+Файл assertion находится вне repository и store и имеет ровно такие поля:
 
 ```json
 {
-  "schema": 1,
-  "run_id": "sample-001",
-  "repo": "/tmp/taskproof-demo",
-  "mode": "Direct",
-  "scope": ["webapp/src/TaskProofWhitespaceFixture.tsx"],
-  "actions": ["snapshot", "check", "review", "close"],
-  "sources": ["README.md"],
-  "preset": "git-index-whitespace-v1",
-  "acceptance": ["staged-whitespace"],
-  "review": {"required": true, "independence": "not_required"}
+  "schema": "taskclosurekit/assertion/v2",
+  "task_id": "whitespace-demo-v2",
+  "statement": "Разрешённое изменение подготовлено; это заявление агента."
 }
 ```
 
-Допустимы режимы `Direct`, `Review` и `Investigation`; режим `TDD-first` пока не поддержан. Список `actions`, preset и acceptance должны в точности совпасть с примером. `review.required` должен быть `true`. Для `independence` принимаются `not_required` и `required`; второе сейчас всегда блокируется, поскольку CLI не располагает доверенным способом подтвердить независимого рецензента.
+Statement — строка длиной 1–4096 символов. Journal/status сохраняет только statement digest, canonical `agent-import` / `agent_attested`, contract/snapshot bindings, sequence и timestamp; raw statement не сохраняется и не возвращается. `assertions` отделены от `evidence`: наличие assertion не удовлетворяет criterion, не меняет trust и не закрывает transaction. Digest не гарантирует анонимность исходного текста. Не помещайте secrets, `.env`, tokens или персональные данные в contract, review, assertion и другие входные файлы; отсутствие raw statement в journal не защищает сам внешний input file.
 
-Не помещайте shell-команды, токены или секреты в контракт. Пути источников считаются входными данными и связываются со снимком; это не означает, что их текст автоматически становится командой или полномочием.
+## Restart и handoff
 
-## Цикл
-
-1. Создайте изолированный Git-репозиторий, добавьте исходные файлы и сделайте исходный commit. Для проверки staged diff с `HEAD` этот commit обязателен.
-2. Сохраните контракт вне репозитория и вызовите `contract`. Это создаёт новое локальное хранилище для run.
-3. Вызовите `baseline`, чтобы сохранить исходный снимок.
-4. Внесите изменение только в разрешённую область и добавьте его в Git index (`git add`). `check` запускает только зафиксированную команду `git diff --cached --check` относительно `HEAD`.
-5. При ошибке устраните проблему, повторно добавьте исправленный файл и вызовите `check` ещё раз. Закрытие после проваленной проверки блокируется.
-6. После успешной проверки сохраните review JSON для точного digest из ответа `check`, вызовите `review`, затем `close`.
-
-Проверка следует исходным правилам Git, включая `.gitattributes`; успешный результат не означает отсутствия всех видов пробелов. Создание, изменение или удаление `.gitattributes` в рабочем дереве или индексе, в том числе внутри `scope`, блокирует текущий цикл и требует нового run. Имена с другим регистром букв тоже считаются защищёнными, поскольку на файловой системе без учёта регистра Git может читать их как `.gitattributes`.
-
-Пример review JSON:
-
-```json
-{
-  "schema": 1,
-  "run_id": "sample-001",
-  "snapshot": "<64 hex characters returned by check>",
-  "decision": "approve"
-}
+```sh
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store status --next --json
+python3 -m taskclosurekit --store /tmp/taskclosurekit-store resume --json
 ```
 
-Эта квитанция утверждает решение для того же `run_id` и снимка, но сама по себе не удостоверяет личность автора или независимость. Если файл в разрешённой области `Direct` меняется до закрытия, запустите `check` повторно для нового снимка; понадобится новый review. Изменение контракта, источника, программы/preset, Git controls или файлов вне scope блокирует цикл и требует нового run после проверки состояния. Не редактируйте файлы хранилища вручную.
+`resume` — compatibility alias текущего status projection v2. Новый процесс читает журнал, проверяет integrity/semantic replay, заново сопоставляет bindings с текущим состоянием и показывает current/stale evidence, missing requirements через reasons, last_confirmed и next_action. Обе команды только читают transaction: не повторяют check, не записывают evaluation event и не replay-ят transcript.
 
-## Синтетическое подключение
-
-Тест [test_template_fixture.py](../tests/test_template_fixture.py) генерирует disposable Git-репозиторий с нейтральным `README.md` и `webapp/src/TaskProofWhitespaceFixture.tsx`. В нём тест сначала фиксирует искусственный trailing whitespace, вызывает настоящий CLI и получает `BLOCKED` при `close`, затем исправляет и staged-ит файл, проходит `check → review → close` и сверяет снимки. Сценарий — только синтетическая проверка контракта CLI. Он не включает код или тесты `web-app-template`, не исполняет их и не доказывает совместимость с реальным шаблоном.
-
-## Что подтверждает этот срез
-
-- Контракт имеет строгую схему; неизвестные поля и пути с обходом каталога отклоняются.
-- Снимок связывает проверяемые файлы, источники, Git state, preset и текущую программу.
-- Запускается одна фиксированная проверка staged whitespace с ограничением времени и вывода; сырые stdout/stderr не сохраняются.
-- Локальная подпись и цепочка записей позволяют обнаружить изменения журнала при последующем чтении.
-- Недостающие шаги, ошибка проверки, устаревший снимок и неизвестная обязательная независимость блокируют закрытие.
-
-Это не удостоверяет семантическое качество кода, корректность любых других критериев, авторство или независимость review. Подпись локальна и не защищает от владельца машины, который может заменить программу, ключ и данные вместе. CLI не является универсальной песочницей: использует POSIX resource limits, а лимит адресного пространства выставляется только на Linux. Доказательства локального прогона не подтверждают CI, публикацию, установку, deployment или работу в production.
+Interrupted check не повторяется автоматически и блокирует claim до осмотра состояния и нового transaction. `status --next` возвращает action id, а не agent plan; это closure recovery, не memory system. Real CI/network adapter, SDK, completion hook, installer и deployment отсутствуют.
