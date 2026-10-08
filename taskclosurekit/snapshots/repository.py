@@ -2,30 +2,65 @@
 from taskproof import core, snapshot
 from ..domain.contract import identity
 from ..domain.snapshot import Snapshot
-from ..execution.presets import REGISTRY
+from ..execution.presets import REGISTRY, observe, validate_record
 
 PROGRAM_ROOTS = ("taskproof", "taskclosurekit", "tests")
 
-def capture(contract, input_path):
+def capture(contract, input_path, registry_record=None):
     raw = snapshot.capture(contract.repository, input_path, contract.sources, program_roots=PROGRAM_ROOTS)
-    return raw, describe(raw, contract)
+    if registry_record is not None:
+        raw["capabilities"] = observe(registry_record, contract, raw["entries"])
+    return raw, describe(raw, contract, registry_record)
 
-def describe(raw, contract):
+def describe(raw, contract, registry_record=None):
     digest = snapshot.digest(raw)
-    core.valid_snapshot({"snapshot":raw, "digest":digest}, contract.legacy_policy())
+    legacy = {key: value for key, value in raw.items() if key != "capabilities"}
+    core.valid_snapshot({"snapshot":legacy, "digest":snapshot.digest(legacy)}, contract.legacy_policy())
+    registry = validate_record(registry_record, contract) if registry_record else REGISTRY
+    capability = raw.get("capabilities")
+    if registry_record:
+        from ..domain.contract import fields
+        from ..execution.presets import validate_binding
+        fields(capability, ("registry_digest", "config_binding", "authority_bindings", "runtime_bindings"))
+        if (capability["registry_digest"] != identity(registry_record) or
+                set(capability["authority_bindings"]) != set(registry_record["authority_bindings"]) or
+                set(capability["runtime_bindings"]) != set(registry_record["runtime_bindings"])):
+            raise RuntimeError("invalid_preset_binding")
+        for binding, resource in [(capability["config_binding"], False),
+                *((v, False) for v in capability["authority_bindings"].values()),
+                *((v, True) for v in capability["runtime_bindings"].values())]:
+            if not (type(binding) is dict and set(binding) == {"missing"} and binding["missing"] is True):
+                validate_binding(binding, resource=resource)
+    elif capability is not None:
+        raise RuntimeError("invalid_preset_binding")
     program = raw["execution"]["program"]
     if not all(any(p.startswith(root+"/") for p in program) for root in PROGRAM_ROOTS):
         raise RuntimeError("incomplete_program_identity")
     return Snapshot(digest, identity({"entries":raw["entries"],"controls":raw["controls"]}),
-        identity({"contract":contract.digest,"input":raw["contract_input"],"sources":raw["source_bindings"]}),
-        identity({"execution":raw["execution"],"presets":[REGISTRY.get(p).digest for p in contract.authority.presets]}),
+        identity({"contract":contract.digest,"input":raw["contract_input"],"sources":raw["source_bindings"], **({"capabilities":{k:v for k,v in capability.items() if k != "runtime_bindings"}} if capability else {})}),
+        identity({"execution":raw["execution"],"presets":[registry.get(p).digest for p in contract.authority.presets], **({"runtime":capability["runtime_bindings"]} if capability else {})}),
         raw["controls"]["head"])
 
-def authority_error(contract, baseline, current, expected_input):
+def preset_error(current, registry_record):
+    if not registry_record:
+        return None
+    capability = current["capabilities"]
+    if (capability["config_binding"] != registry_record["config_binding"] or
+            capability["authority_bindings"] != registry_record["authority_bindings"]):
+        return "preset_authority_changed"
+    if capability["runtime_bindings"] != registry_record["runtime_bindings"]:
+        return "preset_environment_changed"
+    return None
+
+
+def authority_error(contract, baseline, current, expected_input, registry_record=None):
+    error = preset_error(current, registry_record)
+    if error:
+        return error
     if current["contract_input"] != expected_input:
         return "authority_changed"
     try:
-        core.permitted_change(contract.legacy_policy(), {"snapshot":baseline}, current)
+        core.permitted_change(contract.legacy_policy(), {"snapshot":{k:v for k,v in baseline.items() if k != "capabilities"}}, {k:v for k,v in current.items() if k != "capabilities"})
     except RuntimeError as error:
         reason = str(error)
         if reason == "source_changed" and any(

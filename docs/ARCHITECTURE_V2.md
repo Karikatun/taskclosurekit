@@ -1,4 +1,4 @@
-# Архитектура и карта миграции v2
+# Архитектура и карта миграции v2.1
 
 ## Исходная архитектура
 
@@ -34,12 +34,12 @@ flowchart TD
 | --- | --- | --- |
 | **Keep** | Нормализованные пути, проверка physical identity и symlink defenses | Повторное использование snapshot/path helpers через adapter; не заменять лексической проверкой |
 | **Keep** | File/Git snapshot, sources/worktree/index binding, hidden/ignored files, bounded traversal и loose object validation | RepositorySnapshot сохраняет прежние fail-closed ограничения |
-| **Keep** | Fixed subprocess argv, sanitized environment, timeout/output/resource limits | Trusted preset оборачивает тот же runner |
+| **Keep** | Fixed subprocess argv, sanitized environment, timeout/output/resource limits | Bounded v2 runner adapter сохраняет timeout/output/resource checks; legacy runner неизменен |
 | **Keep** | HMAC chain, строгие записи и отказ при нарушении integrity | LocalHmacStore за EvidenceStore; HMAC не объявляется identity |
 | **Extract** | Contract/acceptance/review/state logic в core | TaskContract, Authority, AcceptanceCriterion, Evidence, AgentAssertion, Review, Claim, Closure, Evaluation и Snapshot — domain types |
 | **Replace** | `mode` определяет product lifecycle | Явные authority/evidence/review/claim requirements; режим разработки остаётся вне контракта v2 |
 | **Replace** | Единственный hardcoded acceptance label | Отдельные criteria с `all_of`/`any_of` по выбранным presets |
-| **Replace** | Один неявный preset | Trusted PresetRegistry; в первом срезе исполняется прежний единственный preset |
+| **Replace** | Один неявный preset | Trusted PresetRegistry с builtin и явной pinned external project configuration; contract выбирает IDs |
 | **Replace** | Review JSON + общий close gate | Exact contract/snapshot/evidence-set binding, typed trust/independence и отдельные evaluate/close |
 | **Replace** | `CHECKED` фактически означает успешную проверку | Evidence result отдельно от freshness; `CLAIMABLE` отдельно от `CLOSED` |
 | **Deprecate** | Schema-1 contract/events и `python3 -m taskproof` | Сохранённый legacy путь; без автоматической конвертации или удаления |
@@ -60,4 +60,14 @@ Source adapter для будущего `measured_ci` должен подтвер
 
 ## Риски и границы следующей миграции
 
-Security regression снижается повторным использованием строгих primitives и tests, а не названием новой папки. Compatibility ограничена отдельным v1 CLI: старые journals не становятся v2. Overengineering сдерживается одним claim, одной registry capability и отсутствием SDK/policy DSL. Конкурентная граница — bounded task closure, а не общая memory/evidence/control plane. Naming gate проверен отдельно; имя не предоставляет права на release или изменение GitHub.
+Security regression снижается повторным использованием строгих primitives и tests, а не названием новой папки. Compatibility ограничена отдельным v1 CLI: старые journals не становятся v2. Overengineering сдерживается одним claim, минимальными project capabilities и отсутствием SDK/policy DSL. Конкурентная граница — bounded task closure, а не общая memory/evidence/control plane. Naming gate проверен отдельно; имя не предоставляет права на release или изменение GitHub.
+
+## Минимальное расширение v2.1
+
+Project configuration находится вне проверяемого repository/store и загружается явно при CREATE. Registry definition digest, physical config identity и authority inputs принадлежат authority snapshot, executable/runtime identity — execution snapshot. Local operator подтверждает bound authority; renderer/contract не назначают trust. Изменённая config требует нового task, а не автоматического принятия новой команды.
+
+Check adapter принимает registered definition и выполняет без shell фиксированные argv, environment, cwd rule и limits. До/после проверяются conservative full snapshots; declared permitted writes должны одновременно входить в contract write scope. Relevant inputs явно объявляются категориями, но dependency graph не угадывается. Такой подход может инвалидировать дополнительные проверки и имеет прежние bounded IO/Git-layout ограничения. Он не ограничивает hostile process средствами ОС.
+
+Review verdict, trust source, independence и freshness остаются самостоятельными свойствами. Authority class `operator_confirmed` отделена от legacy `human`/`human_confirmed` strings и от `identity_verified=false`.
+
+[LexForge integration](LEXFORGE_INTEGRATION.md) читает существующий CLI envelope и передаёт обычный bounded contract. Proposal/spec/design/decomposition остаются внешнему workflow; domain не приобретает эти зависимости. [Reference mapping](WEB_APP_TEMPLATE_REFERENCE.md) описывает engineering-shaped usage без исполнения внешнего template.

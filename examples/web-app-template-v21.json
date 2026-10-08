@@ -1,0 +1,61 @@
+{
+  "schema": "taskclosurekit/v2",
+  "task": {
+    "id": "contracts-error-code-v21",
+    "title": "Добавить поддержанный error code и regression test"
+  },
+  "repository": "/absolute/path/to/web-app-template",
+  "authority": {
+    "task": {
+      "issuer": "human"
+    },
+    "read": [
+      "packages/contracts",
+      "package.json",
+      "bun.lock"
+    ],
+    "write": [
+      "packages/contracts/src/errors.ts",
+      "packages/contracts/src/errors.test.ts"
+    ],
+    "execution": {
+      "presets": [
+        "project-contract-tests",
+        "project-contract-typecheck"
+      ]
+    }
+  },
+  "sources": [
+    "packages/contracts/package.json"
+  ],
+  "acceptance": [
+    {
+      "id": "contracts-regression",
+      "required": true,
+      "evidence": {
+        "all_of": [
+          "project-contract-tests"
+        ]
+      }
+    },
+    {
+      "id": "contracts-types",
+      "required": true,
+      "evidence": {
+        "all_of": [
+          "project-contract-typecheck"
+        ]
+      }
+    }
+  ],
+  "review": {
+    "required": true,
+    "independence": "not_required"
+  },
+  "claim": {
+    "type": "configured-acceptance-satisfied"
+  },
+  "closure": {
+    "authority": "human"
+  }
+}

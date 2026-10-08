@@ -1,8 +1,8 @@
-# Проверяемый срез TaskClosureKit v2
+# Проверяемый срез TaskClosureKit v2.1
 
 ## Область
 
-Staged migration заменяет product semantics, сохраняя строгие primitives v1. Один claim `configured-acceptance-satisfied`, одна исполняемая capability `git-index-whitespace-v1`, local HMAC journal, отдельное authority/review/closure confirmation и versioned JSON CLI. Новые зависимости, сетевые integrations, installer и release не нужны.
+Staged migration заменяет product semantics, сохраняя строгие primitives v1. Один claim `configured-acceptance-satisfied`, builtin `git-index-whitespace-v1` и минимальные project tests/typecheck/build capabilities, local HMAC journal, отдельное authority/review/closure confirmation и versioned JSON CLI. Новые зависимости, сетевые integrations, installer и release не нужны.
 
 Исходный v1 context сохранён в [CLI v1](CLI_V1.md). [Архитектурная карта](ARCHITECTURE_V2.md) задаёт Keep/Extract/Replace/Deprecate/Delete later. [Product boundaries](PRODUCT_BOUNDARIES.md) ограничивают scope.
 
@@ -10,7 +10,7 @@ Staged migration заменяет product semantics, сохраняя строг
 
 | Срез | Проверяемый результат |
 | --- | --- |
-| Основной flow | Контракт принят → human authority подтверждена → baseline создан → trusted preset реально запущен → evidence привязано к exact snapshot → review → evaluate даёт CLAIMABLE → отдельный authorized close сохраняет bounded Claim/Closure |
+| Основной flow | Контракт принят → operator authority подтверждена → baseline создан → trusted preset реально запущен → evidence привязано к exact snapshot → review → evaluate даёт CLAIMABLE → отдельный authorized close сохраняет bounded Claim/Closure |
 | Stale input | Разрешённое изменение после PASS сохраняет исторический результат, но делает evidence STALE_INPUT и блокирует claim; повторный check/review восстанавливает current applicability |
 | Scope violation | Изменены разрешённый `src/foo.py` и неразрешённый `README.md`: даже PASS не устраняет `write_scope_violation` |
 | Unknown independence | Review присутствует, policy требует independence, trusted proof отсутствует: UNKNOWN и NOT_CLAIMABLE |
@@ -48,3 +48,25 @@ python3 -m unittest discover -s tests -v
 Новая модель реально используется CLI; реальный end-to-end flow и все negative invariants проходят; legacy/security regression не выявляет ухудшения; обязательный review выполнен для точного состояния. JSON envelope различает operational status и claim decision, machine consumer не парсит prose. Документы отражают actual CLI и trust limits; version bump допустим лишь после полного working slice и migration path.
 
 Это local readiness. Commit, push, CI, publication и deployment имеют собственные подтверждения и не следуют из тестов. В первом срезе не реализуются SDK/hook, general executor, policy DSL, memory, UI/server/database, network CI adapters, public attestations или installer.
+
+## Migration assessment v2.1
+
+| Категория | Оценка до реализации |
+| --- | --- |
+| Already correct | Layer direction, bounded authority/evidence/review/claim, separate closure, exact bindings, strict path/Git IO и HMAC replay |
+| Missing for v2.1 | Meaningful project checks, explicit trusted config, engineering slices, handoff projection и distinct stale exit |
+| Needs refactor | Узкий registry/runner adapter; не переписывать domain или legacy primitives |
+| Security-sensitive | CREATE/authorize config pinning, dispatcher/runtime provenance, input completeness, permitted writes и output limits |
+| Compatibility risk | Старые human strings, execution snapshot после update, result consumers с exit 4; journals не мигрируются автоматически |
+
+## Real engineering checks
+
+Slice A проверяет bug fix через tests + typecheck + exact review → CLAIMABLE → отдельный close; новое source изменение делает tests stale. Slice B требует tests AND build: missing build блокирует, оба PASS лишь потенциально разрешают claim, build config изменение инвалидирует evidence, rerun инвалидирует старый review. Slice C меняет файл за пределами write authority: все PASS не перекрывают `write_scope_violation`. Эти disposable synthetic fixtures выполняют реальные процессы на нейтральном C коде: Clang собирает и запускает regression, `-Werror -fsyntax-only` проверяет типы и object build пишет разрешённую `.build` область; они не являются настоящим запуском checks [web-app-template](WEB_APP_TEMPLATE_REFERENCE.md).
+
+Дополнительные обязательные invariants: changed config/dispatcher не self-authorizes после CREATE; registry definition drift означает STALE_AUTHORITY; runtime drift — STALE_ENVIRONMENT; explicit input drift — STALE_INPUT; PASS одного preset не удовлетворяет другого; новый FAIL важнее старого PASS; required UNKNOWN independence блокирует и при реальном check flow; renderer не повышает trust.
+
+Обновлённый CLI и [LexForge seam](LEXFORGE_INTEGRATION.md) должны сохранять structured `decision/state/reasons/next_action`, различать operational failure, blocked decision и stale/unknown. [Migration note](MIGRATION_V21.md) документирует compatibility. Фактически выполненные tests, reviewer evidence и commit отражаются отдельным финальным отчётом: этот документ не превращает план в PASS.
+
+### Conservative output invalidation
+
+Snapshot включает разрешённые generated outputs; они не исключаются автоматически. Если build впервые создаёт `.build/foo.o` после tests, предыдущий tests PASS может стать STALE_INPUT даже при неизменном source. Тогда tests нужно повторить на состоянии с build output; byte-identical повторный output не меняет snapshot. При дальнейших writes возможно снова потребуется recheck. Это намеренная conservative applicability, не вычисление точного dependency graph. Claim разрешён лишь когда все required receipts и review относятся к текущим bindings.

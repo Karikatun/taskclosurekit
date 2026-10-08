@@ -7,7 +7,6 @@ from .authority import Authority
 from .criterion import AcceptanceCriterion
 
 SCHEMA = "taskclosurekit/v2"
-PRESET_IDS = ("git-index-whitespace-v1",)
 CLAIM_TYPE = "configured-acceptance-satisfied"
 
 def identity(value):
@@ -83,7 +82,7 @@ def parse_contract(value):
     if any(not any(s==r or s.startswith(r+"/") for r in read) for s in sources):
         raise RuntimeError("source_outside_read_scope")
     presets = a["execution"]["presets"]
-    if type(presets) is not list or not 1 <= len(presets) <= len(PRESET_IDS) or any(type(p) is not str or p not in PRESET_IDS for p in presets) or len(set(presets)) != len(presets):
+    if type(presets) is not list or not 1 <= len(presets) <= 32 or any(type(p) is not str or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]{0,63}", p) for p in presets) or len(set(presets)) != len(presets):
         raise RuntimeError("unknown_preset")
     criteria = value["acceptance"]
     if type(criteria) is not list or not 1 <= len(criteria) <= 100:

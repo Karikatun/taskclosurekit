@@ -1,0 +1,76 @@
+{
+  "schema": "taskclosurekit/v2",
+  "task": {
+    "id": "increment-fix-v21",
+    "title": "Исправить increment и проверить заданные критерии"
+  },
+  "repository": "/absolute/path/to/disposable-repository",
+  "authority": {
+    "task": {
+      "issuer": "human"
+    },
+    "read": [
+      "README.md",
+      "src",
+      "tests",
+      "checks.py",
+      "manifest.json",
+      "dependencies.lock",
+      "compiler.json"
+    ],
+    "write": [
+      "src/foo.c",
+      ".build"
+    ],
+    "execution": {
+      "presets": [
+        "project-tests",
+        "project-typecheck",
+        "project-build"
+      ]
+    }
+  },
+  "sources": [
+    "README.md"
+  ],
+  "acceptance": [
+    {
+      "id": "regression",
+      "required": true,
+      "evidence": {
+        "all_of": [
+          "project-tests"
+        ]
+      }
+    },
+    {
+      "id": "types",
+      "required": true,
+      "evidence": {
+        "all_of": [
+          "project-typecheck"
+        ]
+      }
+    },
+    {
+      "id": "artifact",
+      "required": true,
+      "evidence": {
+        "all_of": [
+          "project-tests",
+          "project-build"
+        ]
+      }
+    }
+  ],
+  "review": {
+    "required": true,
+    "independence": "not_required"
+  },
+  "claim": {
+    "type": "configured-acceptance-satisfied"
+  },
+  "closure": {
+    "authority": "human"
+  }
+}

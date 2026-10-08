@@ -9,9 +9,9 @@ from .domain.review import Review
 from .domain.assertion import AgentAssertion
 from .engine.evaluate import evaluate
 from .engine.closure import action_binding, close
-from .execution.runner import run
-from .execution.presets import REGISTRY
-from .snapshots.repository import capture, authority_error
+from .execution.runner import run, permitted_outputs
+from .execution.presets import REGISTRY, prepare_config, validate_record, authority_digest
+from .snapshots.repository import capture, authority_error, preset_error
 from .storage.local_hmac import LocalHmacStore
 from .storage.replay import replay
 from .trust.local_operator import LocalOperator
@@ -31,7 +31,7 @@ def outside(path, repo, store, kind):
         raise RuntimeError(kind+"_input_must_be_outside_store")
     return path
 
-def create(store_path, input_path):
+def create(store_path, input_path, *, preset_config=None):
     path=snapshot.safe_path(input_path)
     value=bounded_json(path)
     contract=parse_contract(value)
@@ -40,14 +40,18 @@ def create(store_path, input_path):
         raise RuntimeError("repository_required")
     store=LocalHmacStore(store_path,repo)
     outside(path,repo,store,"contract")
+    registry_record = prepare_config(preset_config, contract, store) if preset_config is not None else None
+    if registry_record is None:
+        for preset_id in contract.authority.presets:
+            REGISTRY.get(preset_id)
     identity=snapshot.regular(path,snapshot.Budget(),65536)[0]
     # Re-read to prevent contract bytes and input identity disagreeing under a race.
     if bounded_json(path)!=value or snapshot.regular(path,snapshot.Budget(),65536)[0]!=identity:
         raise RuntimeError("contract_input_race")
     with store.locked(create=True):
         store.initialize()
-        store.append([],"CONTRACT_CREATED",{"contract":value,"input_path":str(path),"input_hash":identity},contract.id)
-    return envelope("task.create",task_id=contract.id,state="DRAFT",next_action="authorize",contract_digest=contract.digest)
+        store.append([],"CONTRACT_CREATED",{"contract":value,"input_path":str(path),"input_hash":identity, **({"registry":registry_record} if registry_record else {})},contract.id)
+    return envelope("task.create",task_id=contract.id,state="DRAFT",next_action="authorize",contract_digest=contract.digest, authority_digest=authority_digest(contract.digest,registry_record))
 
 def project(operation, tx, current, evaluation):
     result=envelope(operation,task_id=tx.contract.id,state=evaluation.state,decision=evaluation.decision,
@@ -56,6 +60,26 @@ def project(operation, tx, current, evaluation):
         contract_digest=tx.contract.digest,snapshot=current.digest,evidence_set=evaluation.evidence_set,
         evidence=[asdict(item) for item in tx.evidence],assertions=[asdict(item) for item in tx.assertions],review_present=tx.review is not None,
         independence=evaluation.independence,last_confirmed=tx.last_confirmed)
+    authority = {"class": "operator_confirmed", "source": "local-operator", "identity": "unverified",
+                 "confirmed": tx.authorized, "read": list(tx.contract.authority.read),
+                 "write": list(tx.contract.authority.write), "presets": list(tx.contract.authority.presets),
+                 "binding": authority_digest(tx.contract.digest, tx.registry_record)}
+    review = None
+    if tx.review:
+        exact = (tx.review.contract_digest == tx.contract.digest and tx.review.snapshot_digest == current.digest and
+                 tx.review.evidence_set == evaluation.evidence_set)
+        review = {"verdict": tx.review.verdict,
+                  "trust": "operator_confirmed" if tx.review.source.id == "local-operator" else tx.review.source.trust_class,
+                  "source": tx.review.source.id, "identity": "unverified",
+                  "independence": tx.review.independence, "freshness": "CURRENT" if exact else "STALE"}
+    current_ids = [item for item, state in evaluation.freshness if state == "CURRENT"]
+    stale_ids = [{"id": item, "freshness": state} for item, state in evaluation.freshness if state != "CURRENT"]
+    result["authority"] = authority
+    result["review"] = review
+    result["handoff"] = {"task": {"id": tx.contract.id, "title": tx.contract.title},
+        "current_state": evaluation.state, "authority": authority, "current_evidence": current_ids,
+        "stale_evidence": stale_ids, "review": review, "claim_status": evaluation.decision,
+        "blockers": list(evaluation.reasons), "next_permitted_action": evaluation.next_action}
     if tx.closure:
         result["closure"]=asdict(tx.closure)
     return result
@@ -80,14 +104,18 @@ def execute(store_path, operation, *, input_path=None, preset_id=None, operator=
         events=store.read();tx=replay(events);contract=tx.contract
         LocalHmacStore(store_path,contract.repository)
         outside(tx.input_path,contract.repository,store,"contract")
-        raw,current=capture(contract,tx.input_path)
-        error=authority_error(contract,tx.baseline,raw,tx.input_hash) if tx.baseline else "authority_changed" if raw["contract_input"]!=tx.input_hash else None
+        registry = validate_record(tx.registry_record, contract) if tx.registry_record else REGISTRY
+        if tx.registry_record:
+            outside(tx.registry_record["config_path"],contract.repository,store,"preset_config")
+        raw,current=capture(contract,tx.input_path,tx.registry_record)
+        error=authority_error(contract,tx.baseline,raw,tx.input_hash,tx.registry_record) if tx.baseline else preset_error(raw,tx.registry_record) or ("authority_changed" if raw["contract_input"]!=tx.input_hash else None)
         assessed=evaluate(contract,current,tx.evidence,tx.review,authorized=tx.authorized,
             baselined=tx.baseline is not None,authority_error=error,interrupted=tx.started is not None,closed=tx.closure)
         if readonly:
             result=project(operation,tx,current,assessed)
             if not error and not tx.started and not tx.evidence:
                 result["state"]=tx.state
+                result["handoff"]["current_state"]=tx.state
             return result
         if tx.closure:
             return envelope(operation,task_id=contract.id,state="CLOSED" if not error and assessed.state=="CLOSED" else "STALE",
@@ -97,11 +125,11 @@ def execute(store_path, operation, *, input_path=None, preset_id=None, operator=
         if operation=="authorize":
             if tx.state!="DRAFT":
                 raise RuntimeError("authorize_requires_draft")
-            receipt,reason=confirm(operator,"authorize",action_binding("authorize",contract.digest,None,None))
+            receipt,reason=confirm(operator,"authorize",action_binding("authorize",authority_digest(contract.digest,tx.registry_record),None,None))
             if reason:
                 return envelope(operation,task_id=contract.id,state="BLOCKED",decision="NOT_CLAIMABLE",reasons=(reason,),next_action="authorize")
             # Confirmation may have taken time; never authorize changed inputs.
-            again,_=capture(contract,tx.input_path)
+            again,_=capture(contract,tx.input_path,tx.registry_record)
             if again!=raw:
                 raise RuntimeError("inputs_changed_during_confirmation")
             store.append(events,"AUTHORITY_VALIDATED",{"confirmation":receipt},contract.id)
@@ -114,20 +142,23 @@ def execute(store_path, operation, *, input_path=None, preset_id=None, operator=
         if tx.baseline is None:
             return project(operation,tx,current,assessed)
         if operation=="check":
-            preset=REGISTRY.get(preset_id)
+            preset=registry.get(preset_id)
             if preset.id not in contract.authority.presets:
                 raise RuntimeError("preset_not_authorized")
+            if not any(preset.id in criterion.evidence for criterion in contract.acceptance):
+                raise RuntimeError("preset_has_no_criterion")
             start=time.time_ns()
             events.append(store.append(events,"CHECK_STARTED",{"snapshot":raw,"identity":asdict(current),
                 "preset_id":preset.id,"started_ns":start},contract.id))
-            journal=run(preset.id,contract.repository)
-            after,_=capture(contract,tx.input_path)
-            reason="check_timeout" if journal["timeout"] else "check_output_limit" if journal["truncated"] else "check_failed" if journal["exit_code"]!=0 else "inputs_changed_during_check" if after!=raw else None
+            journal=run(preset.id,contract.repository,registry)
+            after,after_model=capture(contract,tx.input_path,tx.registry_record)
+            reason="check_timeout" if journal["timeout"] else "check_output_limit" if journal["truncated"] else "check_failed" if journal["exit_code"]!=0 else "inputs_changed_during_check" if not permitted_outputs(raw,after,preset) else None
             sequence=len(events)+1
             item=Evidence("check-"+str(sequence),preset.id,"measured_local",EvidenceSource("local-preset","measured_local"),
-                contract.digest,current,tuple(c.id for c in contract.acceptance if preset.id in c.evidence),"FAIL" if reason else "PASS",sequence,time.time_ns())
-            events.append(store.append(events,"CHECK_COMPLETED",{"evidence":asdict(item),"journal":journal,"reason":reason},contract.id))
+                contract.digest,after_model if not reason else current,tuple(c.id for c in contract.acceptance if preset.id in c.evidence),"FAIL" if reason else "PASS",sequence,time.time_ns())
+            events.append(store.append(events,"CHECK_COMPLETED",{"evidence":asdict(item),"journal":journal,"reason":reason, **({"snapshot":after,"identity":asdict(after_model)} if tx.registry_record else {})},contract.id))
             tx=replay(events)
+            current=after_model if not reason else current
             result=project(operation,tx,current,evaluate(contract,current,tx.evidence,tx.review,authorized=True,baselined=True))
             result["state"]="BLOCKED" if reason else "EVIDENCED"
             result["reasons"]=[reason] if reason else []
@@ -164,7 +195,7 @@ def execute(store_path, operation, *, input_path=None, preset_id=None, operator=
                 if value["schema"]!="taskclosurekit/review/v2" or value["task_id"]!=contract.id or value["contract_digest"]!=contract.digest or value["snapshot_digest"]!=current.digest or value["evidence_set"]!=assessed.evidence_set or value["verdict"] not in ("approve","reject"):
                     raise RuntimeError("invalid_agent_review")
                 source=EvidenceSource("agent-import","agent_attested");verdict=value["verdict"]
-            after,_=capture(contract,tx.input_path)
+            after,_=capture(contract,tx.input_path,tx.registry_record)
             if after!=raw:
                 raise RuntimeError("inputs_changed_during_confirmation")
             review=Review(contract.digest,current.digest,assessed.evidence_set,verdict,source,
@@ -181,7 +212,7 @@ def execute(store_path, operation, *, input_path=None, preset_id=None, operator=
             receipt,reason=confirm(operator,"close",action_binding("close",contract.digest,current.digest,assessed.evidence_set))
             if reason:
                 return envelope(operation,task_id=contract.id,state="BLOCKED",decision="NOT_CLAIMABLE",reasons=(reason,),next_action="close")
-            after,_=capture(contract,tx.input_path)
+            after,_=capture(contract,tx.input_path,tx.registry_record)
             if after!=raw:
                 raise RuntimeError("inputs_changed_during_confirmation")
             closure=close(assessed,receipt,len(events)+1)

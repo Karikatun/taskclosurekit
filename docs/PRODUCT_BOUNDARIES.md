@@ -1,4 +1,4 @@
-# Продуктовые границы TaskClosureKit v2
+# Продуктовые границы TaskClosureKit v2.1
 
 Единственная специализация — ограниченное закрытие инженерной задачи: вычислить и отдельно зафиксировать допустимый completion claim для текущих authority, repository/execution state, evidence и review. Этот документ описывает продукт; он не изменяет AGENTS.md, полномочия оператора или ограничения среды.
 
@@ -21,8 +21,16 @@ TaskClosureKit не является:
 - **deployment system**: не публикует, не выпускает release, не выполняет deploy;
 - **alternative to in-toto/Witness/Sigstore**: не создаёт универсальную PKI или публичный стандарт attestations.
 
-`status --next` допустим только для восстановления доказуемого состояния closure transaction. Preset registry выбирает заранее доверенные capabilities и не является plugin marketplace. HMAC остаётся локальной деталью хранения. Machine envelope позволяет внешнему агенту читать решение, но SDK и completion hook не входят в core domain model.
+`status --next` допустим только для восстановления доказуемого состояния closure transaction. Preset registry выбирает заранее доверенные capabilities и не является plugin marketplace. HMAC остаётся локальной деталью хранения. Machine envelope позволяет внешнему агенту читать решение; существующий CLI JSON служит [границей интеграции с LexForge](LEXFORGE_INTEGRATION.md). SDK, RPC, сервер и completion hook отсутствуют. TaskClosureKit не принимает proposal, spec, design, decomposition, model assignment или subagents внешнего workflow.
 
 Claim `configured-acceptance-satisfied` означает, что все обязательные **configured** criteria удовлетворены допустимыми актуальными evidence для конкретного контракта и snapshot. Он не означает, что код полностью корректен, багов нет, production безопасен, security доказана вообще, все требования продукта удовлетворены или deployment разрешён.
 
 Любое расширение оценивается по тому, помогает ли оно этому конкретному claim и сохраняет ли существующие границы доверия. Future DSSE/in-toto export, Sigstore/Witness или CI adapters возможны как отдельные bounded integrations после проверки основного среза; их наличие не обещается этой миграцией.
+
+## Real engineering checks
+
+Заранее подтверждённые project presets могут представлять tests, typecheck и build. Contract выбирает только их IDs; executable, argv, cwd, environment, limits, permitted writes и relevant inputs принадлежат отдельной trusted configuration. Конфигурация фиксируется при создании transaction и подтверждается оператором вместе с authority. Изменённая конфигурация не может сама разрешить новую проверку в текущей задаче.
+
+PASS означает результат выбранной проверки на связанном состоянии. Tests проверяют наблюдаемые сценарии, typecheck — свойства выбранной системы типов, build — выбранный процесс сборки. Ни один результат, ни их композиция не доказывают universal correctness, отсутствие багов или production readiness. Scope violation блокирует claim даже при всех PASS. Required independence без trusted provider остаётся UNKNOWN.
+
+Синтетические engineering fixtures демонстрируют механизм closure, а [mapping web-app-template](WEB_APP_TEMPLATE_REFERENCE.md) показывает возможные реальные capabilities. Это разные уровни evidence: passing fixture не означает, что проверки внешнего проекта были выполнены.

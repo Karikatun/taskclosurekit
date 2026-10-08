@@ -1,0 +1,143 @@
+{
+  "schema": "taskclosurekit/presets/v1",
+  "presets": [
+    {
+      "id": "project-tests",
+      "executable": "/absolute/path/to/installed/python3",
+      "argv": [
+        "-B",
+        "checks.py",
+        "tests",
+        "/absolute/path/to/installed/clang",
+        "/absolute/path/to/canonical-sdk"
+      ],
+      "cwd_rule": "contract-repository",
+      "environment_allowlist": {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "TMPDIR": ".build"
+      },
+      "timeout": 5,
+      "output_limit": 65536,
+      "permitted_writes": [
+        ".build"
+      ],
+      "relevant_inputs": {
+        "source": [
+          "src"
+        ],
+        "tests": [
+          "tests"
+        ],
+        "manifests": [
+          "manifest.json"
+        ],
+        "lockfiles": [
+          "dependencies.lock"
+        ],
+        "config": [
+          "compiler.json"
+        ]
+      },
+      "authority_inputs": [
+        "checks.py"
+      ],
+      "runtime_inputs": [
+        "/absolute/path/to/installed/clang"
+      ]
+    },
+    {
+      "id": "project-typecheck",
+      "executable": "/absolute/path/to/installed/python3",
+      "argv": [
+        "-B",
+        "checks.py",
+        "typecheck",
+        "/absolute/path/to/installed/clang",
+        "/absolute/path/to/canonical-sdk"
+      ],
+      "cwd_rule": "contract-repository",
+      "environment_allowlist": {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "TMPDIR": ".build"
+      },
+      "timeout": 5,
+      "output_limit": 65536,
+      "permitted_writes": [
+        ".build"
+      ],
+      "relevant_inputs": {
+        "source": [
+          "src"
+        ],
+        "tests": [
+          "tests"
+        ],
+        "manifests": [
+          "manifest.json"
+        ],
+        "lockfiles": [
+          "dependencies.lock"
+        ],
+        "config": [
+          "compiler.json"
+        ]
+      },
+      "authority_inputs": [
+        "checks.py"
+      ],
+      "runtime_inputs": [
+        "/absolute/path/to/installed/clang"
+      ]
+    },
+    {
+      "id": "project-build",
+      "executable": "/absolute/path/to/installed/python3",
+      "argv": [
+        "-B",
+        "checks.py",
+        "build",
+        "/absolute/path/to/installed/clang",
+        "/absolute/path/to/canonical-sdk"
+      ],
+      "cwd_rule": "contract-repository",
+      "environment_allowlist": {
+        "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "TMPDIR": ".build"
+      },
+      "timeout": 5,
+      "output_limit": 65536,
+      "permitted_writes": [
+        ".build"
+      ],
+      "relevant_inputs": {
+        "source": [
+          "src"
+        ],
+        "tests": [
+          "tests"
+        ],
+        "manifests": [
+          "manifest.json"
+        ],
+        "lockfiles": [
+          "dependencies.lock"
+        ],
+        "config": [
+          "compiler.json"
+        ]
+      },
+      "authority_inputs": [
+        "checks.py"
+      ],
+      "runtime_inputs": [
+        "/absolute/path/to/installed/clang"
+      ]
+    }
+  ]
+}

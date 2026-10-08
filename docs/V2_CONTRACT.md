@@ -11,7 +11,7 @@
 | `authority.task.issuer` | Только `human`; контракт создаётся отдельно от authority confirmation |
 | `authority.read` | Непустой список относительных файлов/поддеревьев; декларативная область, не host read sandbox |
 | `authority.write` | Относительные файлы/поддеревья разрешённых изменений; может быть пустым |
-| `authority.execution.presets` | Выбор известных trusted presets; сейчас только `git-index-whitespace-v1` |
+| `authority.execution.presets` | Выбор известных builtin/project trusted presets только по ID |
 | `sources` | Непустой список обычных файлов внутри read scope, связанных с authority и snapshot |
 | `acceptance` | Отдельные criteria `{id, required, evidence}`; минимум один required |
 | `review` | `{required: boolean, independence: "not_required" или "required"}` |
@@ -20,19 +20,27 @@
 
 Task/criterion id: `[a-z0-9][a-z0-9_.-]{0,63}`. Title — 1–256 символов без control characters. Scope/source paths — до 1024 символов, до 100 записей в списке; без symlink, absolute path, `.`, `..`, пустых компонентов, backslash и `.git` в любом регистре. Globs (`*`, `?`) не поддерживаются: `src` означает поддерево, `src/foo.py` — точный путь. Источники должны точно совпадать с actual spelling обычных файлов, включая index binding; они неизменяемы внутри transaction, даже если входят в write scope.
 
+Execution authority может содержать preset без criterion, но его `check` отклоняется с `preset_has_no_criterion` до CHECK_STARTED и любых записей journal. Для сохраняемой квитанции добавьте criterion (при необходимости optional) в новый согласованный contract до CREATE; authority сама по себе не задаёт acceptance binding.
+
 Criteria имеют уникальные id; `evidence` содержит ровно одно из `all_of` или `any_of` с непустым списком preset ids из execution authority. `all_of` требует current PASS для всех references, `any_of` — хотя бы для одного. Необязательный criterion не блокирует claim; хотя бы один required criterion обязателен. `independence: required` нельзя сочетать с `review.required: false`.
 
 Контракт не задаёт shell, executable/argv, implementation plan, decomposition, модель агента, chain of thought или orchestration. Его текст и source content — данные; они не предоставляют новых полномочий.
 
 ## Trusted preset
 
-Registry описывает executable, фиксированные argv, cwd rule, environment allowlist, timeout, output limit и permitted writes. Контракт лишь выбирает id. Сейчас разрешён один preset, использующий прежний bounded runner:
+Registry сохраняет builtin `git-index-whitespace-v1` и принимает внешнюю project configuration только при `task create INPUT --preset-config ABS`. Config физически вне repository/store, contract не задаёт его определения. Формат strict JSON — `taskclosurekit/presets/v1`, объект с `schema` и массивом `presets`.
+
+Каждое определение задаёт `id`, абсолютный canonical regular `executable`, `argv`, `cwd_rule: contract-repository`, literal `environment_allowlist`, `timeout` (не более 5 секунд), `output_limit` (не более 65536 bytes), `permitted_writes`, `relevant_inputs` с категориями `source`, `tests`, `manifests`, `lockfiles`, `config`, а также `authority_inputs` и абсолютные `runtime_inputs`. Environment names ограничены `PATH`, `LC_ALL`, `LANG`, `PYTHONDONTWRITEBYTECODE`, `CI`, `NODE_NO_WARNINGS`, `TMPDIR`; объявленный PATH равен `/usr/bin:/bin`, TMPDIR — относительный путь внутри permitted writes. Executable/runtime inputs физически вне repository/store. Resource identity имеет отдельные bounds: 384 MiB на файл, 1 GiB суммарно, 32 файла и 10 секунд capture; repository limits не увеличены. Это policy execution definition, не plugin framework.
+
+Relevant input declaration непустая; relevant/authority repository paths входят в read scope. Permitted writes входят в contract write scope и не пересекаются с relevant/authority inputs. Authority inputs не могут входить в task write scope. Прямые repository launchers и package `run` dispatcher manifest должны быть объявлены authority inputs; indirect imports и полный command/dependency graph остаются ответственностью trusted configuration, автоматического discovery нет. Resource-file hashes не удостоверяют всю установку compiler/SDK или supply-chain provenance. Config identity, definitions digest и authority input bindings фиксируются при CREATE. Authorize подтверждает authority с registry binding. Изменение config/dispatcher не может self-authorize command внутри transaction: оно означает STALE_AUTHORITY и требует нового task. Executable/runtime drift означает STALE_ENVIRONMENT. Изменение обычных объявленных inputs означает STALE_INPUT; unknown applicability блокирует required criteria.
+
+Runner v2 — bounded adapter без shell; используются фиксированные argv/environment, timeout/output/resource limits и snapshot до/после. Разрешённые check outputs проверяются по объявленным writes и contract scope (file bound 8 MiB), без объявления OS sandbox. Builtin остаётся staged whitespace check:
 
 ```text
 git --no-pager diff --cached --check --no-ext-diff --no-textconv HEAD --
 ```
 
-Cwd — repository из контракта; runner использует проверенный системный Git и ограниченное environment. Preset не должен записывать продуктовые файлы. Snapshot сравнивается до/после запуска, изменения и races не принимаются как current evidence. Это проверка staged whitespace по правилам Git, включая исходные `.gitattributes`, а не тесты поведения кода. Изменение `.gitattributes`, Git controls или authority sources блокирует transaction; такие изменения не разрешаются новым PASS.
+[Engineering examples](../examples/contract-engineering-v21.json) требуют адаптации paths и trusted definitions до CREATE. Проверки tests/typecheck/build независимо формируют measured evidence; PASS одной capability не заменяет другую.
 
 ## Snapshot и freshness
 
@@ -58,7 +66,7 @@ Evidence имеет id, type (preset id), source/trust class, contract digest, t
 | `agent_attested` | `agent-import`: assertion/review агента; не measured/human evidence |
 | `measured_local` | `local-preset`: runner выполнил выбранную trusted capability |
 | `measured_ci` | `ci-adapter`: seam с проверкой repository/commit/exact snapshot/workflow/check/criterion; CI HEAD PASS не доказывает dirty tree/index; fake в tests, production adapter отсутствует |
-| `human_confirmed` | `local-operator`: terminal confirmation exact digest при доверии хосту; identity не verified |
+| `human_confirmed` | Compatibility spelling; semantic authority `operator_confirmed`, `local-operator`, identity `unverified`, terminal exact-digest confirmation |
 
 Числовые trust scores не используются. Source id и class должны соответствовать доверенной таблице. Agent-import, renderer или downstream API не получают право повысить trust. Measured evidence не расширяет read/write/execution authority. Форма fake CI adapter не удостоверяет реальный workflow. Public JSON import measured_ci отсутствует; future adapter обязан доказать соответствие commit exact repository snapshot, а не прикладывать HEAD PASS к другим worktree/index bytes.
 
@@ -83,9 +91,11 @@ Review binding включает contract digest, exact snapshot digest, relevant
 }
 ```
 
-Вердикт — `approve` или `reject`. Импорт остаётся agent-attested и не удовлетворяет обязательному trusted human review. JSON не содержит предоставляемых автором `trust`, `identity`, `independence` или human confirmation: такие поля не создают разрешение и отклоняются схемой. Отдельный `review --human` требует local terminal confirmation.
+Вердикт — `approve` или `reject`. Импорт остаётся agent-attested и не удовлетворяет обязательному trusted operator-confirmed review. JSON не содержит предоставляемых автором `trust`, `identity`, `independence` или human confirmation: такие поля не создают разрешение и отклоняются схемой. Отдельный `review --human` требует local terminal confirmation.
 
-Independence имеет `NOT_REQUIRED`, `UNKNOWN`, `PROVEN`. В текущей среде provider доказанной независимости отсутствует: required policy → UNKNOWN → NOT_CLAIMABLE, независимо от существования agent/human review. LocalOperator не является identity/independence provider.
+Четыре свойства независимы: verdict (`approve`/`reject`), source trust, independence и freshness exact bindings. `approve` + operator-confirmed + CURRENT + UNKNOWN не удовлетворяет required independence.
+
+Independence имеет `NOT_REQUIRED`, `UNKNOWN`, `PROVEN`. В текущей среде provider доказанной независимости отсутствует: required policy → UNKNOWN → NOT_CLAIMABLE, независимо от существования agent/operator-confirmed review. LocalOperator не является identity/independence provider.
 
 ## Evaluation, Claim, Closure
 
@@ -98,3 +108,21 @@ Claim фиксирует type `configured-acceptance-satisfied`, contract digest
 EvidenceStore имеет append/read/verify boundary; LocalHmacStore переиспользует HMAC chain v1 с versioned v2 domain events и строгим semantic replay. Неподдержанные schemas/events, malformed/tampered records и несогласованные bindings не становятся valid state. Ключ хранится локально вместе с данными; HMAC не является remote attestation, human identity или защитой от malicious equivalent host authority.
 
 Journals schema 1 обслуживает только `python3 -m taskproof`; v2 их не конвертирует и не принимает. Все paths и capture/resource limits наследуют прежний supported boundary: [детали snapshot/path/Git limits](CLI_V1.md). Это совместимость primitives, не обещание сохранения evidence applicability после обновления программы.
+
+## Real engineering checks
+
+Criterion A может требовать tests, B — typecheck, C — tests AND build (`all_of`). Каждый required criterion требует собственных current PASS references; optional criterion не блокирует. Более новый FAIL не скрывается старым PASS. Review после нового check привязывается к новому exact evidence set. Config/input/executable identities устанавливают применимость, а не качество проверки. Tests/typecheck/build остаются ограниченными проверками configured properties; claim не является universal proof.
+
+[Migration v2.1](MIGRATION_V21.md) отделяет schema compatibility, operator semantics и changed exit codes.
+
+### Conservative output invalidation
+
+Snapshot включает разрешённые generated outputs; они не исключаются автоматически. Если build впервые создаёт `.build/foo.o` после tests, предыдущий tests PASS может стать STALE_INPUT даже при неизменном source. Тогда tests нужно повторить на состоянии с build output; byte-identical повторный output не меняет snapshot. При дальнейших writes возможно снова потребуется recheck. Это намеренная conservative applicability, не вычисление точного dependency graph. Claim разрешён лишь когда все required receipts и review относятся к текущим bindings.
+
+## Поддержанный dispatch grammar
+
+CREATE проверяет явные поддержанные формы launcher argv; первый operand не угадывается эвристикой. Для Python поддержаны перечисленные короткие flags/clusters `bBdEiIOPqsSuv`, отдельные/attached operands `-W`, `-X`, `-c`, `-m`, `--` перед script и `--check-hash-based-pycs`. Direct repository script должен существовать и быть immutable authority input; внешний script — явно bound runtime file. `-m` разрешает только существующий локальный `.py` либо package с явно связанными `__init__.py`/`__main__.py`. Missing/ambiguous module target отклоняется; write scope не может разрешать будущий competing package `__init__.py`, который подменил бы выбранный module file. Site/global module resolution не поддержан; сочетание `-I`/`-P` (включая clusters) с `-m` отклоняется, поскольку local resolution меняется. Direct script с этими flags по-прежнему требует binding.
+
+Node поддерживает фиксированный список options; preload/import/loader принимает только явный `./file` или canonical absolute file с binding, без bare package specifiers. Loader options проверяются и после inline eval. Bun test/build поддерживают ограниченные flags и `--cwd`; loader/config/plugin targets связываются явно. Existing implicit `bunfig.toml` должен быть authority input; возможность создать его через write scope при исходном отсутствии отклоняется. Named package `run` требует существующий string `scripts[name]` в bounded immutable `package.json`, без missing-name fallback; script args допустимы только после `--`. `--cwd` поддержан только для Bun, flags других package managers отклоняются. Unknown/ambiguous flags и неподдержанные launchers (`sh`, `bash`, `dash`, `zsh`, `ruby`, `perl`, `npx`, `env`) fail-closed с `unsupported_dispatch_arguments` либо причиной отсутствующего target/binding. Это ограниченный parser, не полное воспроизведение поведения всех runtime. Native fixed executable и indirect imports/resources остаются ответственностью trusted configuration.
+
+V2 runner завершает собственную launched process group перед post-run capture при normal return, timeout, output limit и исключении. Это cleanup зарегистрированной проверки; процесс, покинувший группу через новую session, и hostile host/process isolation этим не доказываются. Legacy builtin runner остаётся отдельным path.

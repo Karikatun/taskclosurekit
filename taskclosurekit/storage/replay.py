@@ -11,6 +11,8 @@ from ..engine.closure import action_binding
 from ..engine.evaluate import evaluate
 from ..trust.confirmation import validate_confirmation
 from ..snapshots.repository import describe, authority_error
+from ..execution.presets import REGISTRY, validate_record, authority_digest
+from ..execution.runner import permitted_outputs
 
 
 def hash_string(value):
@@ -76,6 +78,7 @@ class Transaction:
     closure: object = None
     started: object = None
     last_confirmed: str = "DRAFT"
+    registry_record: object = None
 
 
 def replay(events):
@@ -83,7 +86,7 @@ def replay(events):
     if initial["kind"]!="CONTRACT_CREATED":
         raise RuntimeError("invalid_initial_state")
     payload=initial["payload"]
-    fields(payload,("contract", "input_path", "input_hash"))
+    fields(payload,("contract", "input_path", "input_hash", *(("registry",) if "registry" in payload else ())))
     contract=parse_contract(payload["contract"])
     if contract.id != initial["run_id"]:
         raise RuntimeError("store_binding_mismatch")
@@ -92,46 +95,65 @@ def replay(events):
     core.valid_entry(payload["input_hash"])
     if payload["input_hash"]["kind"]!="file":
         raise RuntimeError("invalid_contract_input_path")
-    tx=Transaction(contract,payload["input_path"],payload["input_hash"])
+    record = payload.get("registry")
+    if "registry" in payload and type(record) is not dict:
+        raise RuntimeError("invalid_preset_configuration")
+    registry = validate_record(record, contract) if record else REGISTRY
+    for preset_id in contract.authority.presets:
+        registry.get(preset_id)
+    tx=Transaction(contract,payload["input_path"],payload["input_hash"],registry_record=record)
     for event in events[1:]:
         kind,p=event["kind"],event["payload"]
         if tx.closure or (tx.started and kind!="CHECK_COMPLETED"):
             raise RuntimeError("invalid_state_sequence")
         if kind=="AUTHORITY_VALIDATED" and tx.state=="DRAFT":
             fields(p,("confirmation",))
-            confirmation(p["confirmation"], action_binding("authorize",contract.digest,None,None))
+            confirmation(p["confirmation"], action_binding("authorize",authority_digest(contract.digest,record),None,None))
             tx.authorized=True;tx.state="AUTHORIZED"
         elif kind=="BASELINE_CAPTURED" and tx.state=="AUTHORIZED":
             fields(p,("snapshot", "identity"))
-            model=describe(p["snapshot"],contract)
+            model=describe(p["snapshot"],contract,record)
             if asdict(model)!=p["identity"] or p["snapshot"]["contract_input"] != tx.input_hash:
                 raise RuntimeError("snapshot_binding_mismatch")
             tx.baseline=p["snapshot"];tx.state="BASELINED"
         elif kind=="CHECK_STARTED" and tx.baseline:
             fields(p,("snapshot", "identity", "preset_id", "started_ns"))
-            model=describe(p["snapshot"],contract)
-            if p["identity"]!=asdict(model) or p["preset_id"] not in contract.authority.presets or authority_error(contract,tx.baseline,p["snapshot"],tx.input_hash):
+            model=describe(p["snapshot"],contract,record)
+            if p["identity"]!=asdict(model) or p["preset_id"] not in contract.authority.presets or authority_error(contract,tx.baseline,p["snapshot"],tx.input_hash,record):
                 raise RuntimeError("execution_or_contract_changed")
             positive(p["started_ns"])
             tx.started=p;tx.state="ACTIVE"
         elif kind=="CHECK_COMPLETED" and tx.started:
-            fields(p,("evidence", "journal", "reason"))
+            fields(p,("evidence", "journal", "reason", *(("snapshot", "identity") if record else ())))
             item=evidence_from(p["evidence"])
             started=tx.started
             fields(p["journal"], ("kind", "stdout_bytes", "stderr_bytes", "exit_code", "timeout", "truncated", "duration_ms"))
             j=p["journal"]
             if any(type(j[x]) is not int for x in ("stdout_bytes","stderr_bytes","exit_code","duration_ms")) or any(j[x]<0 for x in ("stdout_bytes","stderr_bytes","duration_ms")) or type(j["timeout"]) is not bool or type(j["truncated"]) is not bool or j["kind"]!="discarded-output-v1" or not -64<=j["exit_code"]<=255:
                 raise RuntimeError("invalid_execution_journal")
+            preset = registry.get(started["preset_id"])
             output=j["stdout_bytes"]+j["stderr_bytes"]
-            if output>runner.OUTPUT_LIMIT+8192 or (not j["truncated"] and output>runner.OUTPUT_LIMIT):
+            if output>preset.output_limit+8192 or (not j["truncated"] and output>preset.output_limit):
                 raise RuntimeError("invalid_execution_journal")
             expected_reason="check_timeout" if j["timeout"] else "check_output_limit" if j["truncated"] else "check_failed" if j["exit_code"]!=0 else None
             if p["reason"] != expected_reason and not (expected_reason is None and p["reason"]=="inputs_changed_during_check"):
                 raise RuntimeError("invalid_check_reason")
+            measured_identity = started["identity"]
+            if record:
+                after_model = describe(p["snapshot"],contract,record)
+                if asdict(after_model) != p["identity"]:
+                    raise RuntimeError("snapshot_binding_mismatch")
+                unchanged = permitted_outputs(started["snapshot"],p["snapshot"],preset)
+                if p["reason"] is None and (not unchanged or authority_error(contract,tx.baseline,p["snapshot"],tx.input_hash,record)):
+                    raise RuntimeError("invalid_success_receipt")
+                if expected_reason is None and p["reason"] == "inputs_changed_during_check" and unchanged:
+                    raise RuntimeError("invalid_check_reason")
+                if p["reason"] is None:
+                    measured_identity = p["identity"]
             criteria=tuple(c.id for c in contract.acceptance if started["preset_id"] in c.evidence)
             if (item.id!="check-"+str(event["seq"]) or item.sequence!=event["seq"] or item.recorded_ns<started["started_ns"] or
                 item.type!=started["preset_id"] or item.trust_class!="measured_local" or item.source!=EvidenceSource("local-preset","measured_local") or
-                item.contract_digest!=contract.digest or asdict(item.snapshot)!=started["identity"] or item.criteria!=criteria or
+                item.contract_digest!=contract.digest or asdict(item.snapshot)!=measured_identity or item.criteria!=criteria or
                 item.result!=("FAIL" if p["reason"] else "PASS")):
                 raise RuntimeError("receipt_binding_mismatch")
             tx.evidence=(*tx.evidence,item);tx.started=None;tx.state="EVIDENCED"

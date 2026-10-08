@@ -4,11 +4,11 @@
 
 ## Договор
 
-TaskContract фиксирует task id/title, repository, task authority, read/write scope, permitted execution presets, acceptance criteria, требования evidence, review policy, closure authority и requested claim type. В первом срезе схема JSON — `taskclosurekit/v2`, task/closure authority — `human`, claim type — `configured-acceptance-satisfied`.
+TaskContract фиксирует task id/title, repository, task authority, read/write scope, permitted execution presets, acceptance criteria, требования evidence, review policy, closure authority и requested claim type. Схема JSON — `taskclosurekit/v2`, semantic task/closure authority — `operator_confirmed` (compatibility spelling `human`), claim type — `configured-acceptance-satisfied`.
 
 Четыре полномочия различаются: Task Authority определяет контракт; Execution Authority выбирает только доверенные presets; Evidence Authority допускает конкретные источники для trust classes; Closure Authority отдельно фиксирует итоговый claim. Более поздний слой не расширяет authority или trust раннего: evidence не разрешает запись вне scope, review не меняет критерии, presentation не повышает trust, слово `done` не закрывает transaction.
 
-Criterion — условие claim, check — источник evidence. Первого `all_of` или `any_of` по идентификаторам разрешённых presets достаточно; общего policy DSL нет. В реестре первого среза один исполняемый preset: `git-index-whitespace-v1`. Несколько критериев на одной проверке не доказывают несколько независимых свойств кода.
+Criterion — условие claim, check — источник evidence. Первого `all_of` или `any_of` по идентификаторам разрешённых presets достаточно; общего policy DSL нет. Registry v2.1 сохраняет builtin `git-index-whitespace-v1` и допускает явно pinned project tests/typecheck/build definitions. Несколько критериев на одной проверке не доказывают несколько независимых свойств кода.
 
 ## Доказательства и решение
 
@@ -22,9 +22,9 @@ Review связан с contract digest, exact snapshot, relevant evidence set, v
 
 ## Локальный trust boundary
 
-Пресеты задаются доверенной программой, контракт только выбирает известный id. Произвольные shell/argv из контракта не поддерживаются. Snapshot и runner переиспользуют bounded IO, проверки физических путей и Git controls; LocalHmacStore сохраняет поддержанную целостность журнала. Они не являются ОС sandbox, публичной PKI, external identity или remote attestation.
+Пресеты задаются builtin registry или отдельной trusted project configuration при CREATE и подтверждаются оператором; контракт только выбирает известный id. Произвольные shell/argv из контракта не поддерживаются. Snapshot и runner переиспользуют bounded IO, проверки физических путей и Git controls; LocalHmacStore сохраняет поддержанную целостность журнала. Они не являются ОС sandbox, публичной PKI, external identity или remote attestation.
 
-Терминальное подтверждение authority/review/closure связывает решение с digest и использует допущение локального оператора: `host_operator_assumed`, `identity_verified=false`. Это явное ограничение первого среза, а не доказательство trusted human identity. Локальная независимость не объявляется PROVEN.
+Терминальное подтверждение authority/review/closure связывает решение с digest и использует допущение локального оператора: `host_operator_assumed`, `identity_verified=false`. Semantic authority `operator_confirmed` с identity `unverified` сохраняет старые human strings для совместимости. Это явное ограничение локального среза, а не доказательство trusted human identity. Локальная независимость не объявляется PROVEN.
 
 ## Продолжение задачи
 
