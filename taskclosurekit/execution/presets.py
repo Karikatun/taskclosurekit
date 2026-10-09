@@ -2,8 +2,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 import time
-from taskproof import runner, snapshot, core
-from taskproof.store import bounded_json
+from .._primitives import runner, snapshot, policy
+from .._primitives.store import bounded_json
 from ..domain.contract import fields, identity, identifier, path, paths
 from .dispatch import validate_dispatch
 
@@ -74,7 +74,7 @@ def parse_preset(value):
         raise RuntimeError("missing_relevant_inputs")
     if "TMPDIR" in env:
         temp_path = path(env["TMPDIR"])
-        if not core.scope_contains(temp_path, paths(value["permitted_writes"], True)):
+        if not policy.scope_contains(temp_path, paths(value["permitted_writes"], True)):
             raise RuntimeError("preset_temp_outside_writes")
     runtime = value["runtime_inputs"]
     if type(runtime) is not list or len(runtime) > 16 or len(set(runtime)) != len(runtime):
@@ -144,7 +144,7 @@ def validate_binding(value, resource=False):
     entry = value["entry"]
     fields(entry, ("kind", "mode", "size", "sha256"))
     if (type(entry["mode"]) is not int or not 0 <= entry["mode"] <= 0o7777 or
-            type(entry["size"]) is not int or entry["size"] < 0 or not core.hash_string(entry["sha256"])):
+            type(entry["size"]) is not int or entry["size"] < 0 or not policy.hash_string(entry["sha256"])):
         raise RuntimeError("invalid_preset_binding")
     if value["entry"]["kind"] != "file" or value["entry"]["size"] > (RESOURCE_FILE_LIMIT if resource else snapshot.FILE_LIMIT):
         raise RuntimeError("invalid_preset_binding")
@@ -154,17 +154,17 @@ def validate_binding(value, resource=False):
 
 
 def scope_overlap(left, right):
-    return core.scope_contains(left, (right,)) or core.scope_contains(right, (left,))
+    return policy.scope_contains(left, (right,)) or policy.scope_contains(right, (left,))
 
 
 def validate_authority(contract, registry):
     for preset_id in contract.authority.presets:
         preset = registry.get(preset_id)
         for item in (*preset.authority_inputs, *(p for _, items in preset.relevant_inputs for p in items)):
-            if not core.scope_contains(item, contract.authority.read):
+            if not policy.scope_contains(item, contract.authority.read):
                 raise RuntimeError("preset_input_outside_read_scope")
         for item in preset.permitted_writes:
-            if not core.scope_contains(item, contract.authority.write):
+            if not policy.scope_contains(item, contract.authority.write):
                 raise RuntimeError("preset_write_outside_authority")
             if any(scope_overlap(item, inp) for inp in (*preset.authority_inputs, *(p for _, items in preset.relevant_inputs for p in items))):
                 raise RuntimeError("preset_write_overlaps_input")

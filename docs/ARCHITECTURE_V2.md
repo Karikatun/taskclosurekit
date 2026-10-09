@@ -1,12 +1,6 @@
-# Архитектура и карта миграции v2.1
+# Архитектура TaskClosureKit
 
-## Исходная архитектура
-
-На исходном `151b7b42e1514e217a014bc206f36c614a0ece69` пакет `taskproof` состоит из `__main__.py`, `core.py`, `snapshot.py`, `runner.py`, `store.py`. Core объединяет contract validation, event validation, scope/authority checks и lifecycle. Один preset и один acceptance criterion зафиксированы schema 1; `close` объединяет проверку допустимости и закрытие. Snapshot, bounded runner и HMAC store уже имеют строгие проверки.
-
-Проблема миграции — семантическое смешение этих областей, а не необходимость переписать проверенный filesystem/Git код. V2 вводит отдельные criterion/evidence/review/claim entities и вычисление решения до отдельного closure action. Режим работы агента больше не является центральным domain понятием; он остаётся внешним workflow.
-
-## Зависимости
+CLI, application, domain, engine, snapshots, execution, storage и trust имеют разные обязанности. Единственный публичный namespace — `python3 -m taskclosurekit`. Контракт `taskclosurekit/v2` отделяет authority, acceptance, evidence, review, claim и closure; режим разработки остаётся во внешнем workflow.
 
 ```mermaid
 flowchart TD
@@ -14,60 +8,46 @@ flowchart TD
     APP --> ENGINE[engine / evaluation freshness closure]
     ENGINE --> DOMAIN[domain / contract authority criterion evidence review claim state]
     APP --> SNAP[snapshots / repository environment]
-    APP --> EXEC[execution / preset registry runner]
-    APP --> TRUST[trust / sources independence]
-    APP --> STORE[storage / EvidenceStore LocalHmacStore]
-    SNAP --> LEGACY_SNAP[taskproof.snapshot]
-    EXEC --> LEGACY_RUN[taskproof.runner]
-    STORE --> LEGACY_STORE[taskproof.store]
+    APP --> EXEC[execution / presets dispatch runner]
+    APP --> TRUST[trust / sources confirmation independence]
+    APP --> STORE[storage / LocalHmacStore replay]
+    APP --> PRIVATE[_primitives / bounded IO and validation]
+    SNAP --> PRIVATE
+    EXEC --> PRIVATE
+    STORE --> PRIVATE
     TRUST --> DOMAIN
-    EXEC --> DOMAIN
     SNAP --> DOMAIN
+    EXEC --> DOMAIN
     STORE --> DOMAIN
 ```
 
-Это граф ответственности; конкретные файлы могут объединять близкие pure domain types. Domain не импортирует CLI, filesystem, Git, subprocess или persistence. Engine принимает domain inputs и возвращает Evaluation; application связывает trusted capture, хранение и переходы. Presentation сериализует результат и не создаёт новый trust.
+Domain не импортирует CLI, filesystem, Git, subprocess, storage или private primitives. Engine принимает domain inputs и возвращает Evaluation. Application связывает trusted capture, persistence и явные переходы. Presentation сериализует результат и не создаёт trust.
 
-## Migration map
+## Закрытые primitives
 
-| Решение | Исходное | V2 / причина |
-| --- | --- | --- |
-| **Keep** | Нормализованные пути, проверка physical identity и symlink defenses | Повторное использование snapshot/path helpers через adapter; не заменять лексической проверкой |
-| **Keep** | File/Git snapshot, sources/worktree/index binding, hidden/ignored files, bounded traversal и loose object validation | RepositorySnapshot сохраняет прежние fail-closed ограничения |
-| **Keep** | Fixed subprocess argv, sanitized environment, timeout/output/resource limits | Bounded v2 runner adapter сохраняет timeout/output/resource checks; legacy runner неизменен |
-| **Keep** | HMAC chain, строгие записи и отказ при нарушении integrity | LocalHmacStore за EvidenceStore; HMAC не объявляется identity |
-| **Extract** | Contract/acceptance/review/state logic в core | TaskContract, Authority, AcceptanceCriterion, Evidence, AgentAssertion, Review, Claim, Closure, Evaluation и Snapshot — domain types |
-| **Replace** | `mode` определяет product lifecycle | Явные authority/evidence/review/claim requirements; режим разработки остаётся вне контракта v2 |
-| **Replace** | Единственный hardcoded acceptance label | Отдельные criteria с `all_of`/`any_of` по выбранным presets |
-| **Replace** | Один неявный preset | Trusted PresetRegistry с builtin и явной pinned external project configuration; contract выбирает IDs |
-| **Replace** | Review JSON + общий close gate | Exact contract/snapshot/evidence-set binding, typed trust/independence и отдельные evaluate/close |
-| **Replace** | `CHECKED` фактически означает успешную проверку | Evidence result отдельно от freshness; `CLAIMABLE` отдельно от `CLOSED` |
-| **Deprecate** | Schema-1 contract/events и `python3 -m taskproof` | Сохранённый legacy путь; без автоматической конвертации или удаления |
-| **Deprecate** | Новые v2 adapters зависят от внутренних v1 helpers | Временный технический seam; extraction позже только с теми же regression gates |
-| **Delete later** | Legacy namespace/форматы, old lifecycle helpers | Только будущая отдельно согласованная breaking migration; первый срез ничего из этого не удаляет |
+| Модуль | Обязанность |
+| --- | --- |
+| `_primitives.snapshot` | Физическая идентичность и exact spelling путей, symlink/race defenses, bounded inventory и чтение, проверка loose Git objects и source/index binding |
+| `_primitives.policy` | Структурная проверка снимков, неизменность источников и Git controls, сравнение изменений с write scope |
+| `_primitives.runner` | Фиксированный builtin whitespace argv и Git metadata reads, sanitized environment, timeout/output/resource limits |
+| `_primitives.store` | Private atomic HMAC journal, sequence/run binding, bounded JSON и fail-closed integrity read |
+
+Это внутренний слой текущего продукта, а не второй CLI. Старый contract validator, event lifecycle и entry point удалены. `TaskContract.snapshot_policy()` передаёт private policy только данные, необходимые для проверки sources и write scope. Public API остаётся контрактом и CLI, а не private helpers.
+
+Execution identity включает полные деревья `taskclosurekit/` и `tests/`, системный Git, Python и профиль исполнения. Корень определяется относительно расположения private snapshot module. Отсутствующее дерево, неподдержанная запись, лимит или гонка блокируют capture. Тесты остаются входом execution identity текущей source distribution; установщик отсутствует.
 
 ## Состояние и authority
 
-Семантический путь: `DRAFT → AUTHORIZED → BASELINED → ACTIVE → EVIDENCED → REVIEWED → CLAIMABLE → CLOSED`. Не каждый шаг обязан иметь отдельный event: состояние вычисляется из поддержанных событий и текущего snapshot. `BLOCKED`, `STALE`, `INVALID` — проекции причин, а не способ игнорировать prerequisites.
+Семантический путь: `DRAFT → AUTHORIZED → BASELINED → ACTIVE → EVIDENCED → REVIEWED → CLAIMABLE → CLOSED`. `BLOCKED`, `STALE`, `INVALID` отражают причины и не отменяют prerequisites. Repository snapshot связан с working tree/index/HEAD/Git controls; authority — с contract/sources/preset definitions и dispatch inputs; execution — с программой, runtime и environment. Изменение связанного состояния инвалидирует evidence и review. Новый check не узаконивает изменившуюся authority.
 
-RepositorySnapshot связан с working tree, index, HEAD, Git controls и source bindings. AuthoritySnapshot связан с контрактом, источниками и разрешениями; ExecutionSnapshot — с программой, registry, runner, executable и ограниченным environment. Изменение любой релевантной идентичности инвалидирует зависящие evidence/evaluation/review. Новый check может освежить разрешённое изменение кода, но не узаконить изменившуюся authority или запись вне scope.
+Project config физически находится вне repository/store, фиксируется при CREATE и подтверждается оператором. Runner исполняет registered argv без shell. До/после проверяются conservative snapshots; output writes одновременно принадлежат preset definition и contract scope. Полный dependency graph не выводится автоматически, hostile process не изолируется средствами ОС.
 
-Task/closure authority использует подтверждение локального оператора для exact digest с `host_operator_assumed`, `identity_verified=false`. Это ограниченная модель доверия, не доказательство человеческой identity. Agent import остаётся agent-attested; required independence без provider остаётся UNKNOWN.
+Review verdict, source trust, independence и freshness независимы. Local operator подтверждает exact digest с `host_operator_assumed=true` и `identity_verified=false`. Agent import остаётся agent-attested; required independence без trusted provider остаётся UNKNOWN.
 
-## External evidence seam
+## Внешние interfaces
 
-Source adapter для будущего `measured_ci` должен подтвердить repository, exact commit, соответствие commit проверяемому repository snapshot, trusted workflow identity, выбранную успешную check и mapping criterion. CI PASS для HEAD не подтверждает dirty worktree или index. В срезе есть fake/test adapter; он проверяет форму и binding на синтетических данных. Trusted local observer `bind_commit` выдаёт CommitSnapshotBinding только после clean repository status и стабильного bounded capture; fake adapters находятся в tests. Никакая сеть или реальный CI не используется и не доказывается. Недоверенный downstream rendering/API не меняет trust class сохранённого evidence.
+[CLI envelope](CLI.md#machine-envelope) предназначен внешнему workflow. Proposal/spec/design, decomposition и model selection остаются его ответственностью. [Reference mapping](WEB_APP_TEMPLATE_REFERENCE.md) не исполняет внешний проект.
 
-## Риски и границы следующей миграции
+`measured_ci` имеет seam и fake/test adapter. `bind_commit` создаёт CommitSnapshotBinding только после clean repository status и стабильного bounded capture. CI PASS для HEAD не доказывает dirty worktree/index. Реального сетевого CI adapter нет; JSON не назначает trust.
 
-Security regression снижается повторным использованием строгих primitives и tests, а не названием новой папки. Compatibility ограничена отдельным v1 CLI: старые journals не становятся v2. Overengineering сдерживается одним claim, минимальными project capabilities и отсутствием SDK/policy DSL. Конкурентная граница — bounded task closure, а не общая memory/evidence/control plane. Naming gate проверен отдельно; имя не предоставляет права на release или изменение GitHub.
-
-## Минимальное расширение v2.1
-
-Project configuration находится вне проверяемого repository/store и загружается явно при CREATE. Registry definition digest, physical config identity и authority inputs принадлежат authority snapshot, executable/runtime identity — execution snapshot. Local operator подтверждает bound authority; renderer/contract не назначают trust. Изменённая config требует нового task, а не автоматического принятия новой команды.
-
-Check adapter принимает registered definition и выполняет без shell фиксированные argv, environment, cwd rule и limits. До/после проверяются conservative full snapshots; declared permitted writes должны одновременно входить в contract write scope. Relevant inputs явно объявляются категориями, но dependency graph не угадывается. Такой подход может инвалидировать дополнительные проверки и имеет прежние bounded IO/Git-layout ограничения. Он не ограничивает hostile process средствами ОС.
-
-Review verdict, trust source, independence и freshness остаются самостоятельными свойствами. Authority class `operator_confirmed` отделена от legacy `human`/`human_confirmed` strings и от `identity_verified=false`.
-
-Внешний workflow, agent host, orchestrator или automation читает [существующий CLI envelope](CLI.md#machine-envelope) и передаёт обычный bounded task contract. Proposal/spec/design/decomposition остаются внешнему workflow; domain не приобретает эти зависимости. [Reference mapping](WEB_APP_TEMPLATE_REFERENCE.md) описывает engineering-shaped usage без исполнения внешнего template.
+[Границы безопасности](SAFETY_BOUNDARIES.md), [контракт](V2_CONTRACT.md) и [совместимость](COMPATIBILITY.md) фиксируют поддержанные ограничения. Ни имя, ни green checks не разрешают публикацию или deployment.

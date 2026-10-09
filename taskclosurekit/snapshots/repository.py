@@ -1,10 +1,10 @@
-"""Adapter preserves strict v1 inventory/Git/path/bounded IO protections."""
-from taskproof import core, snapshot
+"""Repository adapter enforces strict inventory/Git/path/bounded IO protections."""
+from .._primitives import policy, snapshot
 from ..domain.contract import identity
 from ..domain.snapshot import Snapshot
 from ..execution.presets import REGISTRY, observe, validate_record
 
-PROGRAM_ROOTS = ("taskproof", "taskclosurekit", "tests")
+PROGRAM_ROOTS = ("taskclosurekit", "tests")
 
 def capture(contract, input_path, registry_record=None):
     raw = snapshot.capture(contract.repository, input_path, contract.sources, program_roots=PROGRAM_ROOTS)
@@ -14,8 +14,8 @@ def capture(contract, input_path, registry_record=None):
 
 def describe(raw, contract, registry_record=None):
     digest = snapshot.digest(raw)
-    legacy = {key: value for key, value in raw.items() if key != "capabilities"}
-    core.valid_snapshot({"snapshot":legacy, "digest":snapshot.digest(legacy)}, contract.legacy_policy())
+    bounded = {key: value for key, value in raw.items() if key != "capabilities"}
+    policy.valid_snapshot({"snapshot":bounded, "digest":snapshot.digest(bounded)}, contract.snapshot_policy())
     registry = validate_record(registry_record, contract) if registry_record else REGISTRY
     capability = raw.get("capabilities")
     if registry_record:
@@ -60,11 +60,11 @@ def authority_error(contract, baseline, current, expected_input, registry_record
     if current["contract_input"] != expected_input:
         return "authority_changed"
     try:
-        core.permitted_change(contract.legacy_policy(), {"snapshot":{k:v for k,v in baseline.items() if k != "capabilities"}}, {k:v for k,v in current.items() if k != "capabilities"})
+        policy.permitted_change(contract.snapshot_policy(), {"snapshot":{k:v for k,v in baseline.items() if k != "capabilities"}}, {k:v for k,v in current.items() if k != "capabilities"})
     except RuntimeError as error:
         reason = str(error)
         if reason == "source_changed" and any(
-            not core.scope_contains(source, contract.authority.write) and
+            not policy.scope_contains(source, contract.authority.write) and
             baseline["source_bindings"][source] != current["source_bindings"][source]
             for source in contract.sources):
             return "write_scope_violation"
@@ -76,7 +76,7 @@ def bind_commit(contract, input_path):
 
     Ignores no untracked/ignored relevant files. Dirty snapshots cannot inherit HEAD CI PASS.
     """
-    from taskproof import runner
+    from .._primitives import runner
     from ..domain.snapshot import CommitSnapshotBinding
     before,current=capture(contract,input_path)
     status=runner.git_read(snapshot.git_binary(),contract.repository,

@@ -1,6 +1,6 @@
 # TaskClosureKit CLI v2.1
 
-Локальный namespace — `python3 -m taskclosurekit`, без установки или внешних dependencies. Legacy `python3 -m taskproof` сохраняет отдельный [CLI v1](CLI_V1.md). Ни контракт, ни review JSON не исполняют произвольный shell.
+Локальный namespace — `python3 -m taskclosurekit`, без установки или внешних dependencies. Ни контракт, ни review JSON не исполняют произвольный shell.
 
 ## Запуск и файлы
 
@@ -8,7 +8,7 @@
 
 Демонстрационный [контракт](../examples/contract-v2.json) относится к `/tmp/taskclosurekit-demo`, пишет только `src/foo.py` и связывает `README.md` как неизменяемый источник. Чтобы использовать его, подготовьте небольшой disposable Git repository с нейтральным `README.md`, `src/foo.py` и исходным commit, затем сохраните контракт вне этого repository, например `/tmp/taskclosurekit-contract.json`. Для реальной задачи замените task id, repository и scopes в новом contract file. Не используйте эти пути как готовый production store.
 
-Поддержан обычный `.git` с SHA-1 loose objects; packs, alternates, linked worktrees, unsupported Git controls и неполные snapshots fail-closed. Все [прежние limits/path/source/Git rules](CLI_V1.md) сохраняются. Sources/read/write — точные относительные файлы или поддеревья, globs не поддерживаются. Read scope декларативен и не является host sandbox.
+Поддержан обычный `.git` с SHA-1 loose objects; packs, alternates, linked worktrees, unsupported Git controls и неполные snapshots fail-closed. Все [limits/path/source/Git rules](SAFETY_BOUNDARIES.md) сохраняются. Sources/read/write — точные относительные файлы или поддеревья, globs не поддерживаются. Read scope декларативен и не является host sandbox.
 
 ## Основной цикл
 
@@ -57,7 +57,7 @@ python3 -m taskclosurekit --store /tmp/taskclosurekit-store status --next --json
 
 `operational.status: "ok"` означает успешную обработку операции, включая вычисленное блокирующее решение. Оно не означает CLAIMABLE. `NOT_EVALUATED` у create/authorize/baseline не является одобрением claim. Unknown/stale evidence отражается freshness/reasons или отказом capture, а не общей зелёной operational отметкой.
 
-Exit codes: **0** — успешная операция без blocked decision; **1** — policy-blocked NOT_CLAIMABLE; **2** — invalid input/state; **3** — environment/internal operational failure; **4** — state STALE либо причины `independence_unknown`/`unknown_state`. Stale/unknown решение остаётся NOT_CLAIMABLE, но имеет отдельный exit code. Старые consumers, ожидавшие только 0–3, обновляются по [migration note](MIGRATION_V21.md). Машинная интеграция сначала проверяет operational status, затем decision/reasons. При NOT_CLAIMABLE агент продолжает только уже разрешённую работу или сообщает конкретный blocker; это не разрешение расширять scope.
+Exit codes: **0** — успешная операция без blocked decision; **1** — policy-blocked NOT_CLAIMABLE; **2** — invalid input/state; **3** — environment/internal operational failure; **4** — state STALE либо причины `independence_unknown`/`unknown_state`. Stale/unknown решение остаётся NOT_CLAIMABLE, но имеет отдельный exit code. Совместимость описана в [руководстве](COMPATIBILITY.md). Машинная интеграция сначала проверяет operational status, затем decision/reasons. При NOT_CLAIMABLE агент продолжает только уже разрешённую работу или сообщает конкретный blocker; это не разрешение расширять scope.
 
 ## Failure branches
 

@@ -157,6 +157,8 @@ There is no package uninstaller. Stop invoking the CLI and remove your own sourc
 
 Task data is independent of the source checkout. Each `--store` directory contains the journal and its local HMAC key. External contracts, preset configurations and imported review/assertion files are separate. Removing the tool does not remove these files or the checked repository.
 
+Program updates change execution identity. Earlier baselines and PASS receipts do not become current automatically; use a new agreed task and store after checking the state. There is no previous CLI alias or journal importer. See [compatibility](docs/COMPATIBILITY.md) and [safety boundaries](docs/SAFETY_BOUNDARIES.md).
+
 Before deleting a store, decide whether its evidence must be retained. To keep the record, preserve the complete private store, including the key, together with relevant external inputs. Live recovery also depends on the original bound paths, repository state and execution identity; an archive is not automatically resumable. Deleting the key or journal loses verifiable recovery. Remove only the exact directories and files you chose to discard. The quick start's printed temporary directory contains all demonstration data.
 
 ## Contributing

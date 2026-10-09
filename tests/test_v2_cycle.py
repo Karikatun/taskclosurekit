@@ -263,7 +263,7 @@ class V2CycleTests(unittest.TestCase):
         self.prepare();self.check()
         import hashlib
         import hmac
-        from taskproof.snapshot import canonical
+        from taskclosurekit._primitives.snapshot import canonical
         path=self.store/"0005.json"
         event=json.loads(path.read_text())
         event["payload"]["evidence"]["trust_class"]="human_confirmed"
@@ -277,7 +277,7 @@ class V2CycleTests(unittest.TestCase):
         self.prepare();self.check();self.run_action("review",human=True);self.run_action("close")
         import hashlib
         import hmac
-        from taskproof.snapshot import canonical
+        from taskclosurekit._primitives.snapshot import canonical
         from taskclosurekit.storage.local_hmac import LocalHmacStore
         store=LocalHmacStore(str(self.store))
         with store.locked(readonly=True):
@@ -312,7 +312,7 @@ class V2CycleTests(unittest.TestCase):
         self.check();self.run_action("review",human=True);self.run_action("close")
         import hashlib
         import hmac
-        from taskproof.snapshot import canonical
+        from taskclosurekit._primitives.snapshot import canonical
         from taskclosurekit.storage.local_hmac import LocalHmacStore
         store=LocalHmacStore(str(self.store))
         with store.locked(readonly=True):originals=store.read()

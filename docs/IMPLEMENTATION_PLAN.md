@@ -2,9 +2,9 @@
 
 ## Область
 
-Staged migration заменяет product semantics, сохраняя строгие primitives v1. Один claim `configured-acceptance-satisfied`, builtin `git-index-whitespace-v1` и минимальные project tests/typecheck/build capabilities, local HMAC journal, отдельное authority/review/closure confirmation и versioned JSON CLI. Новые зависимости, сетевые integrations, installer и release не нужны.
+Текущий срез использует строгие private primitives. Один claim `configured-acceptance-satisfied`, builtin `git-index-whitespace-v1` и минимальные project tests/typecheck/build capabilities, local HMAC journal, отдельное authority/review/closure confirmation и versioned JSON CLI. Новые зависимости, сетевые integrations, installer и release не нужны.
 
-Исходный v1 context сохранён в [CLI v1](CLI_V1.md). [Архитектурная карта](ARCHITECTURE_V2.md) задаёт Keep/Extract/Replace/Deprecate/Delete later. [Product boundaries](PRODUCT_BOUNDARIES.md) ограничивают scope.
+[Границы безопасности](SAFETY_BOUNDARIES.md) описывают поддержанные IO/path/Git/resource limits. [Архитектура](ARCHITECTURE_V2.md) задаёт текущие модули. [Product boundaries](PRODUCT_BOUNDARIES.md) ограничивают scope.
 
 ## Vertical slices и условия
 
@@ -29,11 +29,11 @@ Staged migration заменяет product semantics, сохраняя строг
 8. CLAIMABLE не закрывает task автоматически; close отдельно сохраняет конкретный limited claim.
 9. Неизвестное состояние, malformed/tampered/unsupported records fail-closed.
 10. Domain не импортирует CLI/IO; контракт не определяет executable/shell.
-11. Legacy CLI сохраняет отдельную схему, v1 journals не принимаются v2.
+11. Предыдущие task schemas и lifecycle не принимаются; HMAC storage envelope не смешивается с task contract.
 
 ## Проверки
 
-Реальные CLI integration tests выполняются на одноразовых нейтральных Git fixtures с исходным commit и loose objects. Они запускают trusted preset, проверяют negative branches, fresh process handoff и persistence. Domain tests проверяют composition/trust/claim invariants; architecture tests — границы imports. Legacy regression suite проверяет сохранение path/snapshot/runner/integrity behavior. Тесты не читают реальные secrets и не запускают чужие project scripts.
+Реальные CLI integration tests выполняются на одноразовых нейтральных Git fixtures с исходным commit и loose objects. Они запускают trusted preset, проверяют negative branches, fresh process handoff и persistence. Domain tests проверяют composition/trust/claim invariants; architecture tests — границы imports. Safety regression suite проверяет path/snapshot/runner/integrity behavior текущего application и CLI. Тесты не читают реальные secrets и не запускают чужие project scripts.
 
 Общий локальный runner без создания bytecode:
 
@@ -45,19 +45,9 @@ python3 -m unittest discover -s tests -v
 
 ## Definition of Done
 
-Новая модель реально используется CLI; реальный end-to-end flow и все negative invariants проходят; legacy/security regression не выявляет ухудшения; обязательный review выполнен для точного состояния. JSON envelope различает operational status и claim decision, machine consumer не парсит prose. Документы отражают actual CLI и trust limits; version bump допустим лишь после полного working slice и migration path.
+Новая модель реально используется CLI; реальный end-to-end flow и все negative invariants проходят; security regression не выявляет ухудшения; обязательный review выполнен для точного состояния. JSON envelope различает operational status и claim decision, machine consumer не парсит prose. Документы отражают actual CLI и trust limits; версия и публикация требуют самостоятельного решения и фактических проверок.
 
 Это local readiness. Commit, push, CI, publication и deployment имеют собственные подтверждения и не следуют из тестов. В первом срезе не реализуются SDK/hook, general executor, policy DSL, memory, UI/server/database, network CI adapters, public attestations или installer.
-
-## Migration assessment v2.1
-
-| Категория | Оценка до реализации |
-| --- | --- |
-| Already correct | Layer direction, bounded authority/evidence/review/claim, separate closure, exact bindings, strict path/Git IO и HMAC replay |
-| Missing for v2.1 | Meaningful project checks, explicit trusted config, engineering slices, handoff projection и distinct stale exit |
-| Needs refactor | Узкий registry/runner adapter; не переписывать domain или legacy primitives |
-| Security-sensitive | CREATE/authorize config pinning, dispatcher/runtime provenance, input completeness, permitted writes и output limits |
-| Compatibility risk | Старые human strings, execution snapshot после update, result consumers с exit 4; journals не мигрируются автоматически |
 
 ## Real engineering checks
 
@@ -65,7 +55,7 @@ Slice A проверяет bug fix через tests + typecheck + exact review �
 
 Дополнительные обязательные invariants: changed config/dispatcher не self-authorizes после CREATE; registry definition drift означает STALE_AUTHORITY; runtime drift — STALE_ENVIRONMENT; explicit input drift — STALE_INPUT; PASS одного preset не удовлетворяет другого; новый FAIL важнее старого PASS; required UNKNOWN independence блокирует и при реальном check flow; renderer не повышает trust.
 
-Обновлённый [CLI JSON interface](CLI.md#machine-envelope) для внешнего workflow, agent host, orchestrator или automation должен сохранять structured `decision/state/reasons/next_action`, различать operational failure, blocked decision и stale/unknown. [Migration note](MIGRATION_V21.md) документирует compatibility. Фактически выполненные tests, reviewer evidence и commit отражаются отдельным финальным отчётом: этот документ не превращает план в PASS.
+Обновлённый [CLI JSON interface](CLI.md#machine-envelope) для внешнего workflow, agent host, orchestrator или automation должен сохранять structured `decision/state/reasons/next_action`, различать operational failure, blocked decision и stale/unknown. [Совместимость](COMPATIBILITY.md) документирует compatibility. Фактически выполненные tests, reviewer evidence и commit отражаются отдельным финальным отчётом: этот документ не превращает план в PASS.
 
 ### Conservative output invalidation
 

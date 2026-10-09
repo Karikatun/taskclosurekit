@@ -1,8 +1,8 @@
 """Bounded supported launcher grammars; no execution or dependency inference."""
 from pathlib import Path
 import re
-from taskproof import snapshot, core
-from taskproof.store import bounded_json
+from .._primitives import snapshot, policy
+from .._primitives.store import bounded_json
 from ..domain.contract import path
 
 
@@ -86,7 +86,7 @@ def bind_module(module, preset, entries, write_scope):
     # A future package takes precedence over an existing module file. Do not
     # authorize that competing dispatch target implicitly through write scope.
     if file_exists and (base + "/__init__.py" in entries or
-                        core.scope_contains(base + "/__init__.py", write_scope)):
+                        policy.scope_contains(base + "/__init__.py", write_scope)):
         raise RuntimeError("preset_launch_target_required")
     targets = [file_target if file_exists else package_target]
     parts = base.split("/")
@@ -178,7 +178,7 @@ def package_dispatch(command, args, preset, entries, repository, write_scope):
         implicit = cwd + "bunfig.toml"
         if implicit in entries:
             bind_script(implicit, preset, entries, repository)
-        elif core.scope_contains(implicit, write_scope):
+        elif policy.scope_contains(implicit, write_scope):
             raise RuntimeError("preset_launch_target_required")
         simple = {"--coverage", "--watch", "--smol", "--todo", "--only", "--minify", "--sourcemap", "--compile"}
         values = {"--timeout", "--test-name-pattern", "--reporter", "--coverage-reporter",

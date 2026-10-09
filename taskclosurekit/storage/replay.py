@@ -1,6 +1,6 @@
 """Strict semantic validation of HMAC-verified events; unknown state is invalid."""
 from dataclasses import asdict, dataclass
-from taskproof import core, runner, snapshot
+from .._primitives import policy, runner, snapshot
 from ..domain.contract import fields, identity, parse_contract
 from ..domain.evidence import Evidence, EvidenceSource
 from ..domain.review import Review
@@ -16,7 +16,7 @@ from ..execution.runner import permitted_outputs
 
 
 def hash_string(value):
-    if not core.hash_string(value):
+    if not policy.hash_string(value):
         raise RuntimeError("invalid_digest")
     return value
 
@@ -92,7 +92,7 @@ def replay(events):
         raise RuntimeError("store_binding_mismatch")
     if type(payload["input_path"]) is not str or not payload["input_path"].startswith("/"):
         raise RuntimeError("invalid_contract_input_path")
-    core.valid_entry(payload["input_hash"])
+    policy.valid_entry(payload["input_hash"])
     if payload["input_hash"]["kind"]!="file":
         raise RuntimeError("invalid_contract_input_path")
     record = payload.get("registry")

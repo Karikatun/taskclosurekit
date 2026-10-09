@@ -1,6 +1,6 @@
 # Контекст TaskClosureKit
 
-TaskClosureKit — выбранное владельцем имя для staged migration существующего TaskProof в v2. Исходный вариант AgentClosure остановлен на naming gate из-за существенного соседнего проекта `risu-research/bounded-agent-closure`. Проверка TaskClosureKit от 2026-10-08 не обнаружила точных совпадений в исследованных каталогах; это не гарантия товарного знака или будущей доступности. Подробности — [migration note](docs/MIGRATION_V2.md).
+TaskClosureKit — локальный инструмент для проверки допустимости и отдельной фиксации ограниченного закрытия инженерной задачи. Текущий публичный namespace — `python3 -m taskclosurekit`, контракт — `taskclosurekit/v2`.
 
 ## Архитектурный срез v2.1
 
@@ -8,7 +8,7 @@ V2 отделяет authority, execution, evidence, review, claim и closure. Н
 
 Основной claim — `configured-acceptance-satisfied`: обязательные configured acceptance criteria удовлетворены допустимыми актуальными evidence для конкретного контракта и снимка. Успех проверки недостаточен для такого claim, если scope нарушен, review устарел или обязательная независимость неизвестна. `CLAIMABLE` и `CLOSED` разделены; закрытие требует отдельного действия authority.
 
-Безопасные механизмы v1 — path validation, bounded snapshot/Git IO, фиксированный runner, HMAC chain и fail-closed чтение — переиспользуются адаптерами. Сохраняются прежние ограничения snapshot: только обычный `.git`, SHA-1 loose objects, без packed objects/alternates; v2 не расширяет поддержанные Git layouts автоматически. Новый namespace `taskclosurekit` не удаляет legacy `taskproof`. [Карта миграции](docs/ARCHITECTURE_V2.md) отделяет сохраняемые реализации от заменяемой семантики.
+Проверки физических путей, bounded snapshot/Git IO, фиксированный runner и HMAC chain принадлежат закрытому слою `taskclosurekit._primitives`. Snapshot поддерживает обычный `.git`, SHA-1 loose objects, без packed objects/alternates. [Архитектура](docs/ARCHITECTURE_V2.md) описывает текущие модули, [границы безопасности](docs/SAFETY_BOUNDARIES.md) — реальные ограничения. Предыдущий namespace и его lifecycle удалены; [совместимость](docs/COMPATIBILITY.md) отделяет форматы от применимости старых доказательств.
 
 ## Границы доказательств
 
@@ -30,4 +30,4 @@ Project-defined presets фиксируются внешней trusted configurat
 
 Review verdict, source trust, independence и freshness независимы. Approve от local operator с CURRENT binding и UNKNOWN independence не удовлетворяет `independence: required`. Ни measured checks, ни assertion внешнего workflow не расширяют scope.
 
-[web-app-template reference](docs/WEB_APP_TEMPLATE_REFERENCE.md) — read-only mapping команд, не настоящий запуск этих checks. [Универсальный machine interface](docs/CLI.md#machine-envelope) использует CLI JSON и оставляет implementation cycle внешнему workflow, agent host, orchestrator или automation. Migration и exit-code изменения описаны в [MIGRATION_V21.md](docs/MIGRATION_V21.md).
+[web-app-template reference](docs/WEB_APP_TEMPLATE_REFERENCE.md) — read-only mapping команд, не настоящий запуск этих checks. [Универсальный machine interface](docs/CLI.md#machine-envelope) использует CLI JSON и оставляет implementation cycle внешнему workflow, agent host, orchestrator или automation. Совместимость и обновление описаны в [COMPATIBILITY.md](docs/COMPATIBILITY.md).

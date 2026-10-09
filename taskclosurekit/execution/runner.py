@@ -5,7 +5,7 @@ import selectors
 import signal
 import subprocess
 import time
-from taskproof import runner, snapshot, core
+from .._primitives import runner, snapshot, policy
 from .presets import REGISTRY
 
 FILE_WRITE_LIMIT = snapshot.FILE_LIMIT
@@ -106,6 +106,6 @@ def permitted_outputs(before, after, preset):
     for item in set(before["entries"]) | set(after["entries"]):
         if before["entries"].get(item) == after["entries"].get(item):
             continue
-        if not core.scope_contains(item, preset.permitted_writes):
+        if not policy.scope_contains(item, preset.permitted_writes):
             return False
     return True

@@ -258,7 +258,7 @@ sys.exit(result)
     def test_signed_malformed_registry_fails_semantic_replay(self):
         self.prepare()
         import hashlib, hmac
-        from taskproof.snapshot import canonical
+        from taskclosurekit._primitives.snapshot import canonical
         key = (self.store / "key").read_bytes()
         previous = "0" * 64
         for file_path in sorted(self.store.glob("[0-9]*.json")):

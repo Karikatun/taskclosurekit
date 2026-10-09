@@ -105,15 +105,15 @@ Claim фиксирует type `configured-acceptance-satisfied`, contract digest
 
 ## Persistence и совместимость
 
-EvidenceStore имеет append/read/verify boundary; LocalHmacStore переиспользует HMAC chain v1 с versioned v2 domain events и строгим semantic replay. Неподдержанные schemas/events, malformed/tampered records и несогласованные bindings не становятся valid state. Ключ хранится локально вместе с данными; HMAC не является remote attestation, human identity или защитой от malicious equivalent host authority.
+EvidenceStore имеет append/read/verify boundary; LocalHmacStore использует private HMAC chain с versioned v2 domain events и строгим semantic replay. Неподдержанные schemas/events, malformed/tampered records и несогласованные bindings не становятся valid state. Ключ хранится локально вместе с данными; HMAC не является remote attestation, human identity или защитой от malicious equivalent host authority.
 
-Journals schema 1 обслуживает только `python3 -m taskproof`; v2 их не конвертирует и не принимает. Все paths и capture/resource limits наследуют прежний supported boundary: [детали snapshot/path/Git limits](CLI_V1.md). Это совместимость primitives, не обещание сохранения evidence applicability после обновления программы.
+Числовая schema 1 task contract и прежний lifecycle не поддержаны. HMAC envelope schema 1 сохраняется для текущих domain events; automatic importer отсутствует. Paths и capture/resource limits описаны отдельно: [детали snapshot/path/Git limits](SAFETY_BOUNDARIES.md). Это совместимость primitives, не обещание сохранения evidence applicability после обновления программы.
 
 ## Real engineering checks
 
 Criterion A может требовать tests, B — typecheck, C — tests AND build (`all_of`). Каждый required criterion требует собственных current PASS references; optional criterion не блокирует. Более новый FAIL не скрывается старым PASS. Review после нового check привязывается к новому exact evidence set. Config/input/executable identities устанавливают применимость, а не качество проверки. Tests/typecheck/build остаются ограниченными проверками configured properties; claim не является universal proof.
 
-[Migration v2.1](MIGRATION_V21.md) отделяет schema compatibility, operator semantics и changed exit codes.
+[Совместимость](COMPATIBILITY.md) отделяет schema compatibility, operator semantics и changed exit codes.
 
 ### Conservative output invalidation
 
@@ -125,4 +125,4 @@ CREATE проверяет явные поддержанные формы launche
 
 Node поддерживает фиксированный список options; preload/import/loader принимает только явный `./file` или canonical absolute file с binding, без bare package specifiers. Loader options проверяются и после inline eval. Bun test/build поддерживают ограниченные flags и `--cwd`; loader/config/plugin targets связываются явно. Existing implicit `bunfig.toml` должен быть authority input; возможность создать его через write scope при исходном отсутствии отклоняется. Named package `run` требует существующий string `scripts[name]` в bounded immutable `package.json`, без missing-name fallback; script args допустимы только после `--`. `--cwd` поддержан только для Bun, flags других package managers отклоняются. Unknown/ambiguous flags и неподдержанные launchers (`sh`, `bash`, `dash`, `zsh`, `ruby`, `perl`, `npx`, `env`) fail-closed с `unsupported_dispatch_arguments` либо причиной отсутствующего target/binding. Это ограниченный parser, не полное воспроизведение поведения всех runtime. Native fixed executable и indirect imports/resources остаются ответственностью trusted configuration.
 
-V2 runner завершает собственную launched process group перед post-run capture при normal return, timeout, output limit и исключении. Это cleanup зарегистрированной проверки; процесс, покинувший группу через новую session, и hostile host/process isolation этим не доказываются. Legacy builtin runner остаётся отдельным path.
+V2 runner завершает собственную launched process group перед post-run capture при normal return, timeout, output limit и исключении. Это cleanup зарегистрированной проверки; процесс, покинувший группу через новую session, и hostile host/process isolation этим не доказываются. Builtin runner остаётся отдельным path.

@@ -25,7 +25,7 @@ TaskClosureKit не является:
 
 Claim `configured-acceptance-satisfied` означает, что все обязательные **configured** criteria удовлетворены допустимыми актуальными evidence для конкретного контракта и snapshot. Он не означает, что код полностью корректен, багов нет, production безопасен, security доказана вообще, все требования продукта удовлетворены или deployment разрешён.
 
-Любое расширение оценивается по тому, помогает ли оно этому конкретному claim и сохраняет ли существующие границы доверия. Future DSSE/in-toto export, Sigstore/Witness или CI adapters возможны как отдельные bounded integrations после проверки основного среза; их наличие не обещается этой миграцией.
+Любое расширение оценивается по тому, помогает ли оно этому конкретному claim и сохраняет ли существующие границы доверия. Future DSSE/in-toto export, Sigstore/Witness или CI adapters возможны как отдельные bounded integrations после проверки основного среза; их наличие не обещается текущим срезом.
 
 ## Real engineering checks
 

@@ -1,122 +1,54 @@
-"""Synthetic first-integration fixture; it does not copy or run a source project."""
-
+"""Synthetic staged-index fixture; no source project is copied or executed."""
 import json
-import os
-from pathlib import Path
-import shutil
-import subprocess
-import sys
-import tempfile
 import unittest
+import test_v2_cycle as cycle_fixture
+import test_namespace as namespace_fixture
 
 
-ROOT = Path(__file__).resolve().parents[1]
-GIT = shutil.which("git")
-
-
-@unittest.skipUnless(GIT, "git is required for the generated integration fixture")
 class SyntheticTemplateFixtureTests(unittest.TestCase):
+    git = cycle_fixture.V2CycleTests.git
+    cli = namespace_fixture.NamespaceTests.cli
+    successful = namespace_fixture.NamespaceTests.successful
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name).resolve()
-        self.repo = self.root / "synthetic-template"
-        self.repo.mkdir()
-        self.store = self.root / "evidence-store"
-        self.contract_path = self.root / "contract.json"
-        self.review_path = self.root / "review.json"
-        self.env = {
-            "PATH": os.environ.get("PATH", ""),
-            "LC_ALL": "C",
-            "GIT_CONFIG_NOSYSTEM": "1",
-            "GIT_CONFIG_GLOBAL": os.devnull,
-            "GIT_AUTHOR_NAME": "TaskProof Synthetic Fixture",
-            "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
-            "GIT_COMMITTER_NAME": "TaskProof Synthetic Fixture",
-            "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
-            "GIT_OPTIONAL_LOCKS": "0",
-            "PYTHONDONTWRITEBYTECODE": "1",
-        }
-        self.git("init", "--template=", "--initial-branch=master")
-        (self.repo / "README.md").write_text("Synthetic fixture. No source project copied.\n")
-        app_file = self.repo / "webapp/src/TaskProofWhitespaceFixture.tsx"
-        app_file.parent.mkdir(parents=True)
-        app_file.write_text("export const fixtureLabel = 'synthetic';\n")
-        self.git("add", "README.md", "webapp/src/TaskProofWhitespaceFixture.tsx")
-        self.git("commit", "-m", "synthetic fixture baseline")
-        self.contract_path.write_text(json.dumps({
-            "schema": 1,
-            "run_id": "synthetic-first-integration",
-            "repo": str(self.repo),
-            "mode": "Direct",
-            "scope": ["webapp/src/TaskProofWhitespaceFixture.tsx"],
-            "actions": ["snapshot", "check", "review", "close"],
-            "sources": ["README.md"],
-            "preset": "git-index-whitespace-v1",
-            "acceptance": ["staged-whitespace"],
-            "review": {"required": True, "independence": "not_required"},
-        }))
-
-    def git(self, *args):
-        return subprocess.run([GIT, *args], cwd=self.repo, env=self.env,
-                              capture_output=True, check=True).stdout
-
-    def git_result(self, *args):
-        return subprocess.run([GIT, *args], cwd=self.repo, env=self.env,
-                              capture_output=True)
-
-    def cli(self, *args):
-        return subprocess.run(
-            [sys.executable, "-m", "taskproof", "--store", str(self.store), *args],
-            cwd=ROOT, env=self.env, capture_output=True, text=True,
-        )
-
-    def result(self, *args):
-        completed = self.cli(*args)
-        self.assertEqual(completed.stderr, "")
-        return completed.returncode, json.loads(completed.stdout)
+        cycle_fixture.V2CycleTests.setUp(self)
+        self.launch = cycle_fixture.ROOT
+        self.env["GIT_AUTHOR_NAME"] = "TaskClosureKit Synthetic Fixture"
+        self.env["GIT_COMMITTER_NAME"] = "TaskClosureKit Synthetic Fixture"
+        self.target = self.repo / "webapp/src/WhitespaceFixture.tsx"
+        self.target.parent.mkdir(parents=True)
+        self.target.write_text("export const fixtureLabel = 'synthetic';\n")
+        self.git("add", "webapp"); self.git("commit", "-m", "synthetic fixture baseline")
+        self.value["authority"]["read"] = ["README.md", "webapp"]
+        self.value["authority"]["write"] = ["webapp/src/WhitespaceFixture.tsx"]
+        self.input.write_text(json.dumps(self.value))
 
     def test_failed_index_is_blocked_then_corrected_snapshot_closes(self):
-        created = self.cli("contract", str(self.contract_path))
-        self.assertEqual(created.returncode, 0, created.stdout + created.stderr)
-        self.assertEqual(json.loads(created.stdout)["state"], "DRAFT")
-        code, baseline = self.result("baseline")
-        self.assertEqual(code, 0)
-        self.assertEqual(baseline["state"], "BASELINED")
-
-        app_file = self.repo / "webapp/src/TaskProofWhitespaceFixture.tsx"
-        app_file.write_text("export const fixtureLabel = 'synthetic';  \n")
-        self.git("add", "webapp/src/TaskProofWhitespaceFixture.tsx")
-        # The worktree now has a clean version; the staged index still contains the defect.
-        app_file.write_text("export const fixtureLabel = 'synthetic';\n")
-        code, failed = self.result("check")
-        self.assertEqual((code, failed["state"], failed["reason"]), (1, "BLOCKED", "check_failed"))
-        self.assertEqual(self.git_result("diff", "--check").returncode, 0)
-        self.assertEqual(self.git_result("diff", "--cached", "--check").returncode, 2)
-        self.assertNotEqual(failed["snapshot"], baseline["snapshot"])
-
-        code, blocked_close = self.result("close")
-        self.assertEqual((code, blocked_close["state"], blocked_close["reason"]),
-                         (1, "BLOCKED", "check_failed"))
-
-        self.git("add", "webapp/src/TaskProofWhitespaceFixture.tsx")
-        code, passed = self.result("check")
-        self.assertEqual((code, passed["state"], passed["reason"]), (0, "CHECKED", None))
-        self.assertNotEqual(passed["snapshot"], failed["snapshot"])
+        self.successful("task", "create", str(self.input))
+        self.successful("authorize", human=True)
+        baseline = self.successful("baseline")
+        self.target.write_text("export const fixtureLabel = 'synthetic';  \n")
+        self.git("add", "webapp/src/WhitespaceFixture.tsx")
+        self.target.write_text("export const fixtureLabel = 'synthetic';\n")
+        failed = self.cli("check", "git-index-whitespace-v1")
+        self.assertEqual(failed.returncode, 1, failed.stdout + failed.stderr)
+        failure = json.loads(failed.stdout)
+        self.assertEqual(failure["reasons"], ["check_failed"])
+        self.assertNotEqual(failure["snapshot"], baseline["snapshot"])
+        self.assertEqual(self.git("diff", "--check"), b"")
+        blocked = self.cli("close")
+        self.assertEqual(blocked.returncode, 1)
+        self.assertIn("required_evidence_failed", json.loads(blocked.stdout)["reasons"])
+        self.git("add", "webapp/src/WhitespaceFixture.tsx")
+        passed = self.successful("check", "git-index-whitespace-v1")
+        self.assertNotEqual(passed["snapshot"], failure["snapshot"])
         self.assertEqual(self.git("diff", "--cached", "--check"), b"")
-
-        self.review_path.write_text(json.dumps({
-            "schema": 1,
-            "run_id": "synthetic-first-integration",
-            "snapshot": passed["snapshot"],
-            "decision": "approve",
-        }))
-        code, reviewed = self.result("review", str(self.review_path))
-        self.assertEqual((code, reviewed["state"], reviewed["independence"]),
-                         (0, "REVIEWED", "not_required"))
-        code, closed = self.result("close")
-        self.assertEqual((code, closed["state"], closed["claim"]),
-                         (0, "CLOSED", "staged-whitespace"))
+        self.successful("review", "--human", human=True)
+        self.assertEqual(self.successful("evaluate")["decision"], "CLAIMABLE")
+        closed = self.successful("close", human=True)
+        self.assertEqual(closed["state"], "CLOSED")
+        self.assertEqual(closed["claim"]["type"], "configured-acceptance-satisfied")
+        self.assertEqual(closed["claim"]["snapshot_digest"], passed["snapshot"])
 
 
 if __name__ == "__main__":

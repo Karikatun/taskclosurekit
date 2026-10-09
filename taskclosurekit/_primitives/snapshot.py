@@ -458,7 +458,7 @@ def source_bindings(repo, sources, entries, index_entries, budget):
     return bindings
 
 
-def capture(repo, contract_path, sources=(), *, program_roots=("taskproof", "tests")):
+def capture(repo, contract_path, sources=(), *, program_roots=("taskclosurekit", "tests")):
     budget = Budget()
     repo = safe_path(repo)
     git = git_binary()
@@ -471,7 +471,7 @@ def capture(repo, contract_path, sources=(), *, program_roots=("taskproof", "tes
     # Metadata read by Git must match the same complete inventory afterwards.
     if entries != inventory(repo, budget):
         raise RuntimeError("snapshot_race")
-    program_root = Path(__file__).resolve().parents[1]
+    program_root = Path(__file__).resolve().parents[2]
     program = {}
     for name in program_roots:
         for path, value in inventory(program_root / name, budget).items():

@@ -1,6 +1,6 @@
 """Local byte integrity only; equivalent host authority can replace records/key/code."""
-from taskproof.store import Store, json_object
-from taskproof.snapshot import canonical
+from .._primitives.store import Store, json_object
+from .._primitives.snapshot import canonical
 
 class LocalHmacStore(Store):
     def append(self, events, kind, payload, task_id):

@@ -1,8 +1,8 @@
 """Transaction application service; IO and trust adapters live outside domain."""
 from dataclasses import asdict
 import time
-from taskproof import snapshot
-from taskproof.store import bounded_json
+from ._primitives import snapshot
+from ._primitives.store import bounded_json
 from .domain.contract import fields, parse_contract, identity
 from .domain.evidence import Evidence, EvidenceSource
 from .domain.review import Review

@@ -57,7 +57,7 @@ class TaskContract:
     claim_type: str
     digest: str
 
-    def legacy_policy(self):
+    def snapshot_policy(self):
         return {"repo": self.repository, "mode": "Direct", "scope": list(self.authority.write),
                 "sources": list(self.sources)}
 
