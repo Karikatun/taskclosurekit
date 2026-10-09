@@ -2,203 +2,194 @@
 
 [English](README.md) · [Русский](README.ru.md)
 
-TaskClosureKit is a local CLI that helps AI coding agents and engineers decide when an engineering task can be closed. It binds the agreed scope, repository state, check results and review into a recorded, limited completion claim.
+TaskClosureKit is a local command-line tool for engineers and AI coding agents.
+It checks whether an engineering task meets its agreed acceptance criteria.
+It records the evidence and lets an operator close the task.
 
-A passing test can stop being relevant after another edit. An approval can refer to an older diff. A new agent can inherit a “done” message without supporting evidence. TaskClosureKit reports which evidence is current, what blocks closure and which action is permitted next.
+Start here:
 
-Its claim is **`configured-acceptance-satisfied`**: the required criteria in the task contract are satisfied by admissible, current evidence for the bound state. Its strength depends on the criteria you configure.
+```sh
+npx taskclosurekit --help
+```
 
-## How it works
+npm can ask for permission to download the package on first use.
+A Git clone is not necessary.
+
+## Requirements
+
+- Node **22 or later**, with npm/npx.
+- Python **3.9 or later**.
+- macOS or Linux with POSIX resource-limit APIs.
+- System Git in `/usr/bin` or `/bin`.
+
+The tool does not support Windows.
+Local checks cover macOS with Python 3.9.6, Node 22.23.1 and npm 10.9.8.
+Linux and other versions have no verified test matrix here.
+
+The launcher uses the first existing Python in `/usr/bin/python3`, then `/bin/python3`.
+For another installed Python, set `TASKCLOSUREKIT_PYTHON` to its absolute executable path.
+The package has no third-party dependencies or install scripts.
+It does not install Python or migrate existing stores.
+
+## How a task closes
+
+A **contract** defines the repository, allowed reads and writes, checks, acceptance criteria and review requirements.
+A **store** holds the task journal and its local HMAC key.
+Each check result applies to a specific contract, repository state and execution environment.
+Changes can make an earlier `PASS` result stale.
 
 ```text
 create → authorize → baseline → implement and stage → check
        → evaluate → review → evaluate → CLAIMABLE → close → CLOSED
 ```
 
-- A **contract** names the repository, allowed reads and writes, check IDs, acceptance criteria and review policy.
-- **Checks** run trusted presets and record results bound to the contract, repository and execution environment.
-- **Evaluation** checks authority, scope, evidence freshness and review. Historical `PASS` results can become stale; missing or unknown proof blocks the claim.
-- **Review** applies to the exact snapshot and evidence set. Required independence stays blocked without trusted proof of independence.
-- **Closure** is a separate operator action. `CLAIMABLE` means the conditions currently permit the claim; `CLOSED` means the operator has recorded it.
+`CLAIMABLE` means that current evidence permits the completion claim.
+`CLOSED` means that the operator has recorded that claim with a separate `close` action.
+The claim is `configured-acceptance-satisfied`.
+It covers the configured criteria for one task state.
+It does not prove complete correctness or production readiness.
 
-`status --next --json` recovers the persisted task state and blockers for another process without replaying a conversation.
+## Run your first task
 
-## Installation and requirements
+### 1. Prepare the contract
 
-The source and local npm package version is **2.1.0**. The package ships the existing Python standard-library CLI behind one dependency-free `taskclosurekit` Node launcher. There are no third-party Node/Python dependencies, install scripts, runtime downloads or automatic store updates. No npm registry publication or package-name availability is confirmed.
+Open the [example contract](examples/contract-v2.json).
+Save its JSON as a file outside your target repository.
+Set its `repository` to the absolute physical path of your repository.
+Set the task ID and permitted file paths for your task.
+Inspect the complete contract before use.
 
-You need Python **>=3.9**, macOS or Linux with the required POSIX resource-limit APIs, and system Git under `/usr/bin` or `/bin`. The npm launcher also requires Node **>=22** and npm/npx. Windows is unsupported. Local validation covers macOS, Python 3.9.6, Node 22.23.1 and npm 10.9.8; Linux and other runtime versions have no verified matrix here.
+The example permits changes to `src/foo.py` and requires `README.md` as an unchanged source.
+Its check, `git-index-whitespace-v1`, checks only whitespace in staged changes.
+It does not test program behavior.
+For tests or builds, use a reviewed [preset configuration](examples/presets-engineering-v21.json).
+See the [engineering contract](examples/contract-engineering-v21.json) and [CLI reference](docs/CLI.md#real-engineering-checks).
 
-With a supplied local tarball, no Git clone is needed:
+The target repository must have an initial commit and an ordinary `.git` directory with SHA-1 loose objects.
+The tool rejects packed objects, alternates and linked worktrees.
+A typical cloned repository can therefore be unsupported.
+Other Git restrictions appear in [safety boundaries](docs/SAFETY_BOUNDARIES.md#git).
 
-```sh
-npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.0.tgz -- taskclosurekit --help
-npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.0.tgz -- taskclosurekit --store /absolute/path/store status --next --json
-```
-
-These commands consume a local archive; they do not fetch an unpublished registry package. After a separately authorized publication, a pinned registry version could replace the archive. npm manages its own cache; review the package you supply.
-
-The launcher selects `/usr/bin/python3`, then `/bin/python3`, using the first existing candidate. It does not search npm's augmented `PATH` or retry another interpreter after a runtime failure. To use another preinstalled interpreter, set `TASKCLOSUREKIT_PYTHON` to its absolute executable path. The path is resolved once; its bytes/path/version remain part of the existing Python binding. The explicit override is a trusted executable choice, not a Python installer or sandbox.
-
-Python runs with `-I -S -B` and imports the bundled CLI from the package location. Caller cwd, argument boundaries, stdin/stdout/stderr, terminal confirmations and exit codes are retained. Project modules, `PYTHONPATH` and site customization cannot replace bundled imports. Node and npm themselves are not attested by the existing execution identity. See [CLI details](docs/CLI.md#npm-launcher).
-
-Source-checkout use remains available:
-
-```sh
-git clone https://github.com/Karikatun/taskclosurekit.git
-cd taskclosurekit
-python3 -B -m taskclosurekit --help
-```
-
-The quick start below runs from this checkout and reads bundled example files. For a supplied archive, replace each CLI invocation with the local npx prefix above and keep example inputs outside the checked repository/store. `-B` avoids Python bytecode. Keep the tool payload unchanged during a task: its execution identity includes `taskclosurekit/` and `tests/`.
-
-To produce a local archive from a reviewed checkout, use `npm pack --offline --ignore-scripts --pack-destination /absolute/path/to/output`. This packages files without publishing them. The archive includes both identity roots, documentation and public examples; its manifest uses `UNLICENSED` to preserve the absence of a license grant.
-
-The **repository being checked** must have an initial commit and an ordinary `.git` directory with SHA-1 loose objects. Packed objects, alternates and linked worktrees are rejected. A typical cloned target repository may therefore be unsupported. The quick start creates a supported disposable repository.
-
-## Quick start
-
-This example changes one Python file and checks **staged whitespace only**. It demonstrates task closure; it does not test the Python program's behavior.
-
-### 1. Prepare an isolated example
-
-This block creates a unique temporary directory containing a repository, an external contract and, later, a separate store. It reads the bundled contract as JSON and creates a baseline commit with a fixture identity. Your projects and global Git configuration are unaffected.
-
-```sh
-TASKCLOSUREKIT_DEMO=$(python3 -B - <<'PY'
-import json
-import os
-from pathlib import Path
-import shutil
-import subprocess
-import tempfile
-
-root = Path(tempfile.mkdtemp(prefix="taskclosurekit-demo-")).resolve()
-repo = root / "repo"
-repo.mkdir()
-(repo / "src").mkdir()
-(repo / "README.md").write_text("TaskClosureKit example.\n")
-(repo / "src/foo.py").write_text("value = 1\n")
-git = shutil.which("git", path="/usr/bin:/bin")
-env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C",
-       "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
-def run(*args):
-    subprocess.run([git, *args], cwd=repo, env=env, check=True,
-                   stdout=subprocess.DEVNULL)
-run("init", "--template=", "--initial-branch=master", "--object-format=sha1")
-run("add", "README.md", "src/foo.py")
-run("-c", "user.name=Example", "-c", "user.email=example@example.invalid",
-    "commit", "-m", "Example baseline")
-contract = json.loads(Path("examples/contract-v2.json").read_text())
-contract["repository"] = str(repo)
-contract["task"] = {"id": "quickstart", "title": "Check staged whitespace"}
-(root / "contract.json").write_text(json.dumps(contract))
-print(root)
-PY
-)
-printf '%s\n' "$TASKCLOSUREKIT_DEMO"
-```
-
-Keep the printed path. The store must not exist before `task create`, which creates it with private permissions. Paths must be absolute and physically outside the checked repository. Contract, review, assertion and preset configuration files must also stay outside the store. Symlink aliases are rejected.
+Use absolute physical paths for the contract and store.
+Keep both outside the target repository.
+Keep the contract outside the store.
+The store directory must not exist before `task create`.
+The tool rejects symlink aliases.
 
 ### 2. Create and authorize the task
 
-Run each command separately in an interactive terminal:
+Replace the example paths below with your own paths.
+Keep these variables in the same terminal for the remaining steps.
+Run each command separately in an interactive terminal.
 
 ```sh
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" task create "$TASKCLOSUREKIT_DEMO/contract.json" --json
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" authorize --json
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" baseline --json
+TASK_STORE=/absolute/path/to/new-store
+TASK_CONTRACT=/absolute/path/to/contract.json
+npx taskclosurekit --store "$TASK_STORE" task create "$TASK_CONTRACT" --json
+npx taskclosurekit --store "$TASK_STORE" authorize --json
+npx taskclosurekit --store "$TASK_STORE" baseline --json
 ```
 
-`authorize` asks you to type the exact displayed action digest after inspecting the contract. Later, `review --human` and `close` require their own terminal confirmations. JSON output does not bypass confirmation; piped input cannot provide it. For real tasks, these are operator decisions. An agent assertion cannot replace them.
+Before confirmation, inspect the contract.
+For `authorize`, type the exact action digest shown in the terminal.
+`review --human` and `close` need separate operator confirmations.
+JSON output and piped input cannot replace these confirmations.
+An agent assertion cannot replace an operator decision.
 
-### 3. Make the permitted change and check it
+### 3. Make and check the change
+
+Change only the permitted files.
+Stage those changes with Git.
+Run the check from the example contract:
 
 ```sh
-python3 -B - "$TASKCLOSUREKIT_DEMO/repo/src/foo.py" <<'PY'
-from pathlib import Path
-import sys
-Path(sys.argv[1]).write_text("value = 2\n")
-PY
-git -C "$TASKCLOSUREKIT_DEMO/repo" add src/foo.py
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" check git-index-whitespace-v1 --json
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" evaluate --json
+npx taskclosurekit --store "$TASK_STORE" check git-index-whitespace-v1 --json
+npx taskclosurekit --store "$TASK_STORE" evaluate --json
 ```
 
-The check should record `PASS`. Evaluation should return `NOT_CLAIMABLE`, reason `missing_trusted_review` and exit code **1**, because review is still missing. This is the expected intermediate result.
+A successful check records `PASS`.
+Before review, evaluation returns `NOT_CLAIMABLE` with reason `missing_trusted_review` and exit code **1**.
+This result is expected.
 
-### 4. Review and close
+### 4. Review and close the task
 
-Inspect the staged diff first. Then run each TaskClosureKit command separately and confirm the review and closure prompts:
+Inspect the staged diff in the target repository.
+Run each command separately.
+Confirm review only after you have inspected the current changes and evidence.
 
 ```sh
-git -C "$TASKCLOSUREKIT_DEMO/repo" diff --cached
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" review --human --json
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" evaluate --json
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" close --json
-python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" status --next --json
+npx taskclosurekit --store "$TASK_STORE" review --human --json
+npx taskclosurekit --store "$TASK_STORE" evaluate --json
+npx taskclosurekit --store "$TASK_STORE" close --json
+npx taskclosurekit --store "$TASK_STORE" status --next --json
 ```
 
-Evaluation should become `CLAIMABLE`; explicit closure should record `CLOSED`. Later edits require fresh checks and review, or a new task when authority changes. A recorded closure remains a claim about its original bound state.
+If evaluation returns `CLAIMABLE`, confirm the separate `close` action.
+Successful closure records `CLOSED`.
+`status --next --json` shows current evidence, blockers and the next permitted action.
+It can recover task state for another process without the chat history.
 
-## Using it in your workflow
+Before closure, repeat the affected checks after an edit.
+Then, repeat review for the current state.
+After closure, use a new task for a new state.
+If authority changes, create a new agreed task and store.
+Program updates can also invalidate earlier evidence.
+For a fixed package version, use `npx taskclosurekit@2.1.0` instead of `npx taskclosurekit` throughout a task.
 
-Start each real task with a new contract and store. Declare narrow scopes and meaningful acceptance criteria. The built-in `git-index-whitespace-v1` checks only staged whitespace. For tests, type checking or builds, supply a separately reviewed trusted preset configuration at creation:
+## Trust and privacy
 
-```sh
-python3 -B -m taskclosurekit --store /absolute/path/to/new-store task create /absolute/path/to/contract.json --preset-config /absolute/path/to/presets.json --json
-```
+- Scope checks do not create an operating-system sandbox or prevent host file access.
+- Terminal confirmations assume a local operator. They do not verify human identity or reviewer independence.
+- Required reviewer independence blocks the claim without trusted proof. Imported reviews and assertions remain agent-attested.
+- Local HMAC records detect supported integrity failures. A process with equal host privileges can replace the tool, key and journal together.
+- Check execution has time, output and POSIX resource limits. Address-space limits apply only on Linux.
+- The tool discards raw check output. The journal still contains task metadata and snapshots.
 
-The contract selects preset IDs; executable paths, arguments, environment, limits, inputs and permitted outputs belong to the trusted configuration. Adapt and inspect the [engineering example](examples/contract-engineering-v21.json) and [preset template](examples/presets-engineering-v21.json) before use. They do not install their runtimes.
+Do not put credentials, source `.env` files or personal data in task inputs or evidence.
+The tool has no network CI adapter, SDK, completion hook or deployment service.
+Its test CI adapter does not prove results from a real CI provider.
+See [product boundaries](docs/PRODUCT_BOUNDARIES.md) and [safety boundaries](docs/SAFETY_BOUNDARIES.md).
 
-Keep contract sources unchanged, write only within the agreed scope, and rerun affected checks after edits. Tool, configuration or runtime changes can invalidate authority or execution evidence. Conservative snapshots can also make earlier checks stale when another check creates outputs. Follow the reported blocker rather than editing JSON to claim greater trust.
+## Task data and removal
 
-For machine consumers, read `operational.status` first, then `decision`, `reasons` and freshness. `operational.status: "ok"` can accompany a blocked claim. Exit codes: **0** successful unblocked operation; **1** policy-blocked claim; **2** invalid input/state; **3** environment/internal failure; **4** stale or unknown state. The [CLI reference](docs/CLI.md#machine-envelope) describes the envelope and failure branches.
+Removing the tool does not remove stores, external inputs or the target repository.
+Before deletion, decide which task evidence you must keep.
+Keep the complete private store, including its key, with the relevant external inputs.
 
-## Trust and current limits
+Recovery also needs the original paths, repository state and execution identity.
+An archive alone does not guarantee recovery.
+Deleting the journal or key loses verifiable recovery.
 
-- Scope is checked during evaluation. It does not sandbox an agent or prevent host reads and writes.
-- Terminal confirmation assumes a local operator; it does not verify human identity or prove reviewer independence. Imported reviews and assertions retain agent-attested trust.
-- Local HMAC records detect supported integrity failures. An equally privileged host process can replace the program, key and journal together.
-- Preset execution has bounded time/output and POSIX resource limits; address-space limits apply only on Linux. Raw check output is discarded rather than stored.
-- The claim covers configured acceptance for one bound task state. It does not establish universal correctness, security certification or production readiness.
+Remove only the exact files and directories you choose to discard.
+npm manages its cache separately.
+See [compatibility and updates](docs/COMPATIBILITY.md).
 
-The repository contains a local CLI and tests. It has no network CI adapter, SDK, completion hook, Python runtime installer or deployment service. The CI interface has a test adapter, which is not evidence from a real CI provider. See [product boundaries](docs/PRODUCT_BOUNDARIES.md) and the [contract model](docs/V2_CONTRACT.md).
+## Source use and contributions
 
-Do not put credentials, source `.env` files or personal data in task inputs or evidence. The journal stores task metadata and snapshots; discarding check output does not make the other files anonymous.
+From a source checkout, use `python3 -B -m taskclosurekit --help`.
+For contributions, read [AGENTS.md](https://github.com/Karikatun/taskclosurekit/blob/master/AGENTS.md), [CONTEXT.md](CONTEXT.md) and the documents for your change.
+Repository instructions govern this work.
+This README does not grant additional agent permissions.
 
-## Removal and task data
-
-Stop invoking the CLI and remove your own source checkout or supplied archive when no longer needed, after checking for local work you want to keep. npm cache entries are separate; remove only entries you have identified and chosen to discard. Remove any wrapper or workflow integration you added separately. There is no TaskClosureKit data-removal hook.
-
-Task data is independent of the source checkout. Each `--store` directory contains the journal and its local HMAC key. External contracts, preset configurations and imported review/assertion files are separate. Removing the tool does not remove these files or the checked repository.
-
-Program updates change execution identity. Earlier baselines and PASS receipts do not become current automatically; use a new agreed task and store after checking the state. There is no previous CLI alias or journal importer. See [compatibility](docs/COMPATIBILITY.md) and [safety boundaries](docs/SAFETY_BOUNDARIES.md).
-
-Before deleting a store, decide whether its evidence must be retained. To keep the record, preserve the complete private store, including the key, together with relevant external inputs. Live recovery also depends on the original bound paths, repository state and execution identity; an archive is not automatically resumable. Deleting the key or journal loses verifiable recovery. Remove only the exact directories and files you chose to discard. The quick start's printed temporary directory contains all demonstration data.
-
-## Contributing
-
-For source contributions, read [AGENTS.md](https://github.com/Karikatun/taskclosurekit/blob/master/AGENTS.md), [CONTEXT.md](CONTEXT.md) and the documentation for the area you change. Preserve unrelated work, define scope and acceptance criteria before editing, and validate affected behavior. Repository instructions govern engineering work; this README does not grant agents additional permissions.
-
-The test suite uses disposable fixtures and Python's standard test runner:
+Run the source test suite with:
 
 ```sh
 python3 -B -m unittest discover -s tests -v
 ```
 
-If the system temporary directory is heavily populated, use a temporary directory with few entries for fixture runs: physical-path validation is bounded. A passing local suite does not establish remote CI, publication or deployment.
+Local tests do not prove remote CI or deployment.
 
-## Documentation
+## Reference
 
 - [CLI commands, JSON results and recovery](docs/CLI.md)
-- [Contracts, presets and evidence bindings](docs/V2_CONTRACT.md)
-- [Product model](docs/PRODUCT_BRIEF.md) and [boundaries](docs/PRODUCT_BOUNDARIES.md)
+- [Contracts, presets and evidence](docs/V2_CONTRACT.md)
+- [Product model](docs/PRODUCT_BRIEF.md)
 - [Engineering fixture](examples/engineering-fixture/README.md)
 
-Detailed documentation is currently in Russian. Both README files describe the same current functionality.
+Detailed documents are in Russian.
+Both README files describe the same functionality.
 
 ## License
 
-This repository currently contains no `LICENSE` file or declared software license. A license has not been specified here.
+The repository has no `LICENSE` file or declared software license.
+The npm package uses `UNLICENSED`; this value does not grant a software license.
