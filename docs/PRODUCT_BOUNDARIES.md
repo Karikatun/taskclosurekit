@@ -21,7 +21,7 @@ TaskClosureKit не является:
 - **deployment system**: не публикует, не выпускает release, не выполняет deploy;
 - **alternative to in-toto/Witness/Sigstore**: не создаёт универсальную PKI или публичный стандарт attestations.
 
-`status --next` допустим только для восстановления доказуемого состояния closure transaction. Preset registry выбирает заранее доверенные capabilities и не является plugin marketplace. HMAC остаётся локальной деталью хранения. Machine envelope позволяет внешнему агенту читать решение; существующий CLI JSON служит [границей интеграции с LexForge](LEXFORGE_INTEGRATION.md). SDK, RPC, сервер и completion hook отсутствуют. TaskClosureKit не принимает proposal, spec, design, decomposition, model assignment или subagents внешнего workflow.
+`status --next` допустим только для восстановления доказуемого состояния closure transaction. Preset registry выбирает заранее доверенные capabilities и не является plugin marketplace. HMAC остаётся локальной деталью хранения. Machine envelope позволяет внешнему агенту читать решение; существующий CLI JSON служит [универсальным machine interface](CLI.md#machine-envelope) для внешнего workflow, agent host, orchestrator или automation. SDK, RPC, сервер и completion hook отсутствуют. TaskClosureKit не принимает proposal, spec, design, decomposition, model assignment или subagents внешнего workflow.
 
 Claim `configured-acceptance-satisfied` означает, что все обязательные **configured** criteria удовлетворены допустимыми актуальными evidence для конкретного контракта и snapshot. Он не означает, что код полностью корректен, багов нет, production безопасен, security доказана вообще, все требования продукта удовлетворены или deployment разрешён.
 

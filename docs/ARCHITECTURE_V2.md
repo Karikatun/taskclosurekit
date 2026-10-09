@@ -70,4 +70,4 @@ Check adapter принимает registered definition и выполняет б�
 
 Review verdict, trust source, independence и freshness остаются самостоятельными свойствами. Authority class `operator_confirmed` отделена от legacy `human`/`human_confirmed` strings и от `identity_verified=false`.
 
-[LexForge integration](LEXFORGE_INTEGRATION.md) читает существующий CLI envelope и передаёт обычный bounded contract. Proposal/spec/design/decomposition остаются внешнему workflow; domain не приобретает эти зависимости. [Reference mapping](WEB_APP_TEMPLATE_REFERENCE.md) описывает engineering-shaped usage без исполнения внешнего template.
+Внешний workflow, agent host, orchestrator или automation читает [существующий CLI envelope](CLI.md#machine-envelope) и передаёт обычный bounded task contract. Proposal/spec/design/decomposition остаются внешнему workflow; domain не приобретает эти зависимости. [Reference mapping](WEB_APP_TEMPLATE_REFERENCE.md) описывает engineering-shaped usage без исполнения внешнего template.

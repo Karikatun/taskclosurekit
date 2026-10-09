@@ -65,7 +65,7 @@ Slice A проверяет bug fix через tests + typecheck + exact review �
 
 Дополнительные обязательные invariants: changed config/dispatcher не self-authorizes после CREATE; registry definition drift означает STALE_AUTHORITY; runtime drift — STALE_ENVIRONMENT; explicit input drift — STALE_INPUT; PASS одного preset не удовлетворяет другого; новый FAIL важнее старого PASS; required UNKNOWN independence блокирует и при реальном check flow; renderer не повышает trust.
 
-Обновлённый CLI и [LexForge seam](LEXFORGE_INTEGRATION.md) должны сохранять structured `decision/state/reasons/next_action`, различать operational failure, blocked decision и stale/unknown. [Migration note](MIGRATION_V21.md) документирует compatibility. Фактически выполненные tests, reviewer evidence и commit отражаются отдельным финальным отчётом: этот документ не превращает план в PASS.
+Обновлённый [CLI JSON interface](CLI.md#machine-envelope) для внешнего workflow, agent host, orchestrator или automation должен сохранять structured `decision/state/reasons/next_action`, различать operational failure, blocked decision и stale/unknown. [Migration note](MIGRATION_V21.md) документирует compatibility. Фактически выполненные tests, reviewer evidence и commit отражаются отдельным финальным отчётом: этот документ не превращает план в PASS.
 
 ### Conservative output invalidation
 

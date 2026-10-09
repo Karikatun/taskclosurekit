@@ -30,4 +30,4 @@ Project-defined presets фиксируются внешней trusted configurat
 
 Review verdict, source trust, independence и freshness независимы. Approve от local operator с CURRENT binding и UNKNOWN independence не удовлетворяет `independence: required`. Ни measured checks, ни assertion внешнего workflow не расширяют scope.
 
-[web-app-template reference](docs/WEB_APP_TEMPLATE_REFERENCE.md) — read-only mapping команд, не настоящий запуск этих checks. [LexForge seam](docs/LEXFORGE_INTEGRATION.md) использует CLI JSON и оставляет implementation cycle внешнему consumer. Migration и exit-code изменения описаны в [MIGRATION_V21.md](docs/MIGRATION_V21.md).
+[web-app-template reference](docs/WEB_APP_TEMPLATE_REFERENCE.md) — read-only mapping команд, не настоящий запуск этих checks. [Универсальный machine interface](docs/CLI.md#machine-envelope) использует CLI JSON и оставляет implementation cycle внешнему workflow, agent host, orchestrator или automation. Migration и exit-code изменения описаны в [MIGRATION_V21.md](docs/MIGRATION_V21.md).

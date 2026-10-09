@@ -33,6 +33,8 @@ python3 -m taskclosurekit --store /tmp/taskclosurekit-store status --next --json
 
 ## Machine envelope
 
+Внешний workflow, agent host, orchestrator или automation использует существующие `evaluate --json` и `status --next --json` и передаёт обычный [task contract `taskclosurekit/v2`](V2_CONTRACT.md#taskcontract). Trusted preset configuration передаётся отдельно при CREATE; contract, configuration и store соблюдают описанные выше path boundaries. Специальных полей consumer, отдельного API, RPC, SDK или сетевого adapter нет. Proposal/spec/design, decomposition и выбор моделей или subagents остаются ответственностью внешнего workflow; TaskClosureKit оценивает только configured acceptance для exact bindings.
+
 Все существенные команды поддерживают `--json`; текущий CLI печатает JSON envelope и без этого флага. Schema — `taskclosurekit/result/v2`.
 
 | Поле | Как читать |
@@ -126,7 +128,7 @@ IDs должны входить в contract execution authority и external trus
 
 Изменённая config или dispatcher: STALE_AUTHORITY, next action требует нового task; rerun не подтверждает новую authority. Executable/runtime drift: STALE_ENVIRONMENT; source/tests/manifests/lock/config inputs: STALE_INPUT. Conservative snapshot может инвалидировать другие evidence. Declared check outputs разрешены только внутри одновременного preset и contract scope; отсутствие shell или post-run check не означает runtime sandbox.
 
-Tests/typecheck/build PASS независимо удовлетворяют выбранные criteria; перед close всё равно требуется current exact review, сохранённая authority и permitted scope. Stale review после rerun требует нового review. `status --next`/`resume` показывают task, current state, authority, current/stale evidence, review, claim blockers и next action без transcript. [LexForge](LEXFORGE_INTEGRATION.md) читает эти fields как внешний consumer.
+Tests/typecheck/build PASS независимо удовлетворяют выбранные criteria; перед close всё равно требуется current exact review, сохранённая authority и permitted scope. Stale review после rerun требует нового review. `status --next`/`resume` показывают task, current state, authority, current/stale evidence, review, claim blockers и next action без transcript. Внешний workflow, agent host, orchestrator или automation читает эти fields как обычный consumer.
 
 ### Conservative output invalidation
 

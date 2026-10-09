@@ -61,4 +61,4 @@ Task/closure authority семантически имеет класс `operator_
 
 Изменение config/dispatcher делает authority stale и требует нового task; изменение executable/runtime — STALE_ENVIRONMENT; изменение source/tests/manifests/lock/config inputs — STALE_INPUT. Conservative full snapshots могут инвалидировать больше evidence, чем минимальный dependency graph. PASS checks допускают только bounded configured acceptance, не universal correctness.
 
-Для внешнего workflow используется [CLI JSON seam LexForge](docs/LEXFORGE_INTEGRATION.md). `CLAIMABLE` остаётся отдельным от `CLOSED`; required independence при UNKNOWN блокирует claim. [Migration v2.1](docs/MIGRATION_V21.md) описывает новые exit semantics и совместимость.
+Для внешнего workflow используется [универсальный CLI JSON interface](docs/CLI.md#machine-envelope). `CLAIMABLE` остаётся отдельным от `CLOSED`; required independence при UNKNOWN блокирует claim. [Migration v2.1](docs/MIGRATION_V21.md) описывает новые exit semantics и совместимость.
