@@ -134,7 +134,7 @@ Then, repeat review for the current state.
 After closure, use a new task for a new state.
 If authority changes, create a new agreed task and store.
 Program updates can also invalidate earlier evidence.
-For a fixed package version, use `npx taskclosurekit@2.1.0` instead of `npx taskclosurekit` throughout a task.
+For a fixed package version, use `npx taskclosurekit@2.1.1` instead of `npx taskclosurekit` throughout a task.
 
 ## Trust and privacy
 

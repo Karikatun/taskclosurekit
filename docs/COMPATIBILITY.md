@@ -1,6 +1,6 @@
 # Совместимость и обновление TaskClosureKit
 
-Текущий публичный interface — `python3 -m taskclosurekit` из исходников либо `taskclosurekit` через npm launcher; source/npm version — 2.1.0. Task contract `taskclosurekit/v2`, result `taskclosurekit/result/v2`, preset configuration `taskclosurekit/presets/v1`, review/assertion schemas, builtin `git-index-whitespace-v1` и reason codes сохраняются.
+Текущий публичный interface — `python3 -m taskclosurekit` из исходников либо `taskclosurekit` через npm launcher; source/npm version — 2.1.1. Task contract `taskclosurekit/v2`, result `taskclosurekit/result/v2`, preset configuration `taskclosurekit/presets/v1`, review/assertion schemas, builtin `git-index-whitespace-v1` и reason codes сохраняются.
 
 ## Форматы
 
@@ -22,7 +22,7 @@ Project config фиксируется при CREATE; config/dispatcher drift о�
 
 Consumer сначала читает `operational.status`, затем `decision`, `reasons`, freshness и next action. Exit codes: 0 — успешно без blocked claim; 1 — policy blocker; 2 — invalid input/state; 3 — environment/internal failure; 4 — stale/unknown state. JSON с operational status `ok` может содержать NOT_CLAIMABLE. Consumer не закрывает task автоматически и не расширяет scope по assertion.
 
-Локальный npm tarball реализован без registry publication и Python runtime installer. Сеть, SDK, completion hook и внешний store migration не реализованы. [CLI](CLI.md) описывает текущие команды.
+npm tarball не содержит Python runtime installer. Наличие конкретной версии в registry проверяется отдельно. Сеть, SDK, completion hook и внешний store migration не реализованы. [CLI](CLI.md) описывает текущие команды.
 
 ## npm payload и cache path
 

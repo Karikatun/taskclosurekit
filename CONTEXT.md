@@ -1,6 +1,6 @@
 # Контекст TaskClosureKit
 
-TaskClosureKit — локальный инструмент для проверки допустимости и отдельной фиксации ограниченного закрытия инженерной задачи. Текущий публичный CLI — `python3 -m taskclosurekit` из исходников либо `taskclosurekit` через thin npm launcher; контракт — `taskclosurekit/v2`. Локальный npm payload 2.1.0 содержит Python stdlib CLI, launcher/bootstrap и оба fingerprint roots. Публикация registry не выполнена; runtime installer отсутствует.
+TaskClosureKit — локальный инструмент для проверки допустимости и отдельной фиксации ограниченного закрытия инженерной задачи. Текущий публичный CLI — `python3 -m taskclosurekit` из исходников либо `taskclosurekit` через thin npm launcher; контракт — `taskclosurekit/v2`. npm payload 2.1.1 содержит Python stdlib CLI, launcher/bootstrap и оба fingerprint roots. Наличие конкретной версии в registry проверяется отдельно; runtime installer отсутствует.
 
 ## Архитектурный срез v2.1
 

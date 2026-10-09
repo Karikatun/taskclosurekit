@@ -1,6 +1,6 @@
 {
   "name": "taskclosurekit",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Local evidence-bound engineering task closure CLI with a bundled Python stdlib implementation.",
   "license": "UNLICENSED",
   "bin": {

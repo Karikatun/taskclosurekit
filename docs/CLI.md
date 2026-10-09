@@ -5,11 +5,11 @@
 `taskclosurekit` в npm payload — дополнительная точка входа в тот же Python CLI и контракт v2. Локальный tarball запускается без Git clone:
 
 ```sh
-npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.0.tgz -- taskclosurekit --help
-npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.0.tgz -- taskclosurekit --store /absolute/path/store status --next --json
+npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.1.tgz -- taskclosurekit --help
+npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.1.tgz -- taskclosurekit --store /absolute/path/store status --next --json
 ```
 
-Пакет version 2.1.0 не опубликован этим изменением; доступность имени в registry неизвестна. Он не содержит dependencies/install hooks, не устанавливает Python и не меняет stores при загрузке. Node >=22, Python >=3.9, macOS/Linux с POSIX resource APIs и системный Git нужны заранее. Проверена только локальная macOS matrix Python 3.9.6 / Node 22.23.1 / npm 10.9.8.
+Версия исходников и npm payload — 2.1.1. Наличие конкретной версии в registry проверяется отдельно. Он не содержит dependencies/install hooks, не устанавливает Python и не меняет stores при загрузке. Node >=22, Python >=3.9, macOS/Linux с POSIX resource APIs и системный Git нужны заранее. Проверена только локальная macOS matrix Python 3.9.6 / Node 22.23.1 / npm 10.9.8.
 
 `TASKCLOSUREKIT_PYTHON` задаёт явный абсолютный executable override. Иначе выбирается первый существующий `/usr/bin/python3`, затем `/bin/python3`; npm/project PATH не используется. Candidate разрешается в realpath, должен быть executable regular file; ошибка не вызывает fallback/install. Bootstrap `-I -S -B` импортирует bundled module из package parent, сохраняя cwd и argv. Эта граница защищает от подмены Python imports из caller project/PYTHONPATH/site customization, но не от владельца хоста или подменённого Node/npm/явного interpreter.
 
