@@ -1,0 +1,36 @@
+{
+  "name": "taskclosurekit",
+  "version": "2.1.0",
+  "description": "Local evidence-bound engineering task closure CLI with a bundled Python stdlib implementation.",
+  "license": "UNLICENSED",
+  "bin": {
+    "taskclosurekit": "taskclosurekit/launcher.cjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "os": [
+    "darwin",
+    "linux"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Karikatun/taskclosurekit.git"
+  },
+  "files": [
+    "taskclosurekit/**/*.py",
+    "taskclosurekit/launcher.cjs",
+    "tests/*.py",
+    "examples/*.json",
+    "examples/engineering-fixture/README.md",
+    "examples/engineering-fixture/checks.py",
+    "examples/engineering-fixture/compiler.json",
+    "examples/engineering-fixture/manifest.json",
+    "examples/engineering-fixture/dependencies.lock",
+    "examples/engineering-fixture/src/*.c",
+    "examples/engineering-fixture/tests/*.c",
+    "docs/*.md",
+    "README.ru.md",
+    "CONTEXT.md"
+  ]
+}

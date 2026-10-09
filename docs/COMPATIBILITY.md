@@ -1,6 +1,6 @@
 # Совместимость и обновление TaskClosureKit
 
-Текущий публичный interface — `python3 -m taskclosurekit`; source version — 2.1.0. Task contract `taskclosurekit/v2`, result `taskclosurekit/result/v2`, preset configuration `taskclosurekit/presets/v1`, review/assertion schemas, builtin `git-index-whitespace-v1` и reason codes сохраняются.
+Текущий публичный interface — `python3 -m taskclosurekit` из исходников либо `taskclosurekit` через npm launcher; source/npm version — 2.1.0. Task contract `taskclosurekit/v2`, result `taskclosurekit/result/v2`, preset configuration `taskclosurekit/presets/v1`, review/assertion schemas, builtin `git-index-whitespace-v1` и reason codes сохраняются.
 
 ## Форматы
 
@@ -22,4 +22,12 @@ Project config фиксируется при CREATE; config/dispatcher drift о�
 
 Consumer сначала читает `operational.status`, затем `decision`, `reasons`, freshness и next action. Exit codes: 0 — успешно без blocked claim; 1 — policy blocker; 2 — invalid input/state; 3 — environment/internal failure; 4 — stale/unknown state. JSON с operational status `ok` может содержать NOT_CLAIMABLE. Consumer не закрывает task автоматически и не расширяет scope по assertion.
 
-Установщик, package release, сеть, SDK, completion hook и внешний store migration не реализованы. [CLI](CLI.md) описывает текущие команды.
+Локальный npm tarball реализован без registry publication и Python runtime installer. Сеть, SDK, completion hook и внешний store migration не реализованы. [CLI](CLI.md) описывает текущие команды.
+
+## npm payload и cache path
+
+Launcher/bootstrap включены в существующий program fingerprint; их добавление меняет identity относительно прежней source distribution даже при version 2.1.0. Старые current-format stores сохраняются, но изменившийся binding блокирует authority/evidence без переписывания journal или rebaseline.
+
+Byte-identical payload с теми же relative entries, bytes, sizes и modes можно переместить между cache paths: program identity не включает absolute installation root. Это локально проверено для нового payload; сохранение Python executable path/bytes/version, Git, repository и external inputs остаётся обязательным. Изменения launcher, bootstrap, core или tests блокируют прежнее evidence. npm pack может нормализовать modes; совпадение version не доказывает совпадение payload.
+
+Node/npm и package.json не входят в runtime binding. Cache relocation не подтверждает npm provenance, registry publisher, подпись, качество либо совместимость другой runtime/platform. Матрица ограничена macOS / Python 3.9.6 / Node 22.23.1 / npm 10.9.8. Лицензия не назначена; `UNLICENSED` metadata не выдаёт лицензионных прав.

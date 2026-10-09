@@ -1,6 +1,6 @@
 # Контекст TaskClosureKit
 
-TaskClosureKit — локальный инструмент для проверки допустимости и отдельной фиксации ограниченного закрытия инженерной задачи. Текущий публичный namespace — `python3 -m taskclosurekit`, контракт — `taskclosurekit/v2`.
+TaskClosureKit — локальный инструмент для проверки допустимости и отдельной фиксации ограниченного закрытия инженерной задачи. Текущий публичный CLI — `python3 -m taskclosurekit` из исходников либо `taskclosurekit` через thin npm launcher; контракт — `taskclosurekit/v2`. Локальный npm payload 2.1.0 содержит Python stdlib CLI, launcher/bootstrap и оба fingerprint roots. Публикация registry не выполнена; runtime installer отсутствует.
 
 ## Архитектурный срез v2.1
 
@@ -18,7 +18,7 @@ V2 отделяет authority, execution, evidence, review, claim и closure. Н
 
 HMAC подтверждает поддержанную локальную целостность, не identity, remote attestation или защиту от владельца хоста. Scope не ограничивает процесс средствами ОС. Read scope задаёт разрешённую область контракта, но не обещает запрет всех чтений хоста; полный repository snapshot может учитывать metadata и файлы для проверки изменений. Runner использует ограниченный environment и POSIX resource limits; ограничение памяти зависит от Linux. Сырой вывод не сохраняется.
 
-`measured_ci` имеет seam для будущего доверенного адаптера и fake для локальных тестов. Реальные GitHub Actions, сеть, SDK, completion hook, installer, DSSE/in-toto/Sigstore export и публикация не входят в первый срез. Источники из других проектов остаются справочными материалами; тесты используют disposable fixtures.
+`measured_ci` имеет seam для будущего доверенного адаптера и fake для локальных тестов. Реальные GitHub Actions, сеть, SDK, completion hook, Python runtime installer, DSSE/in-toto/Sigstore export и публикация не входят в первый срез. Источники из других проектов остаются справочными материалами; тесты используют disposable fixtures.
 
 ## Приёмка
 

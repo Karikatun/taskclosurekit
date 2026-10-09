@@ -37,3 +37,13 @@ HMAC journal имеет максимум 64 events; event read/write limit 16 Mi
 HMAC key хранится локально. Равноправный владелец хоста может заменить программу/key/store вместе; HMAC не удостоверяет человека, reviewer independence или remote attestation. Терминал подтверждает exact authority/review/closure digest с identity unverified. Agent assertion/import/presentation не повышают trust. UNKNOWN independence блокирует required claim.
 
 `status --next`, `resume`, `evaluate` читают journal и текущее состояние без исполнения checks и без journal writes. Interrupted check не повторяется автоматически. [Совместимость](COMPATIBILITY.md) описывает обновление программы и сохранение исторических данных. Не включайте secrets, исходные `.env` или персональные данные во входы и evidence.
+
+## npm entry point и supply chain
+
+Dependency-free CJS launcher передаёт argv массивом, `shell: false`, inherited cwd/stdio в bundled Python bootstrap. Python выбирается только из fixed system candidates или explicit absolute `TASKCLOSUREKIT_PYTHON`; npm-added PATH не выбирает interpreter. `-I -S -B` исключает caller cwd/PYTHONPATH/user site до bootstrap; package parent добавляется явно. Это import boundary, а не host sandbox; preinstalled Python, Node/npm, явный override и writable package cache остаются trusted host inputs.
+
+Node >=22/Python >=3.9 и supported platform/resource/system Git проверяются до операций CLI. Windows отклоняется. Локально проверена только macOS matrix 3.9.6 / 22.23.1 / npm 10.9.8; Linux support declaration не означает проверку этой платформы. Node/npm execution identity не аттестует.
+
+Package files allowlist включает Python source/tests, launcher, public example assets и docs. Dependencies, install/postinstall scripts, runtime downloads, telemetry, credential reads и store migration отсутствуют. Allowlist проверяется на реальном tarball, включая synthetic excluded `.env`, store, cache, `.scratch` и AGENTS sentinels в disposable candidate. Публикация, registry name availability и provenance не доказаны локальным pack/npx smoke. npm cache не является приватным store и не должен содержать ключи или task records.
+
+SIGINT/SIGTERM передаются в отдельную Python session с inherited TTY descriptors; первый сигнал вызывает cleanup через KeyboardInterrupt, повторы игнорируются. Реальные controlling PTY подтверждения и Ctrl-C, targeted SIGTERM и interruption project check проверены локально. SIGKILL/crash host и escaped descendants остаются границами cleanup. Перед retry читайте `status --next`/`resume`; wrapper не повторяет команды и не заменяет interrupted evidence.

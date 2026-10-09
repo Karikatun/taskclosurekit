@@ -25,9 +25,24 @@ create → authorize → baseline → implement and stage → check
 
 ## Installation and requirements
 
-The current source version is **2.1.0**. Run it directly from a source checkout. It uses the Python standard library; there is no package installer or third-party Python dependency. This repository does not provide a published package or release.
+The source and local npm package version is **2.1.0**. The package ships the existing Python standard-library CLI behind one dependency-free `taskclosurekit` Node launcher. There are no third-party Node/Python dependencies, install scripts, runtime downloads or automatic store updates. No npm registry publication or package-name availability is confirmed.
 
-You need Python 3, a POSIX environment with the required resource-limit APIs, and system Git under `/usr/bin` or `/bin`. The runner does not support Windows. No minimum Python version or tested platform matrix is declared.
+You need Python **>=3.9**, macOS or Linux with the required POSIX resource-limit APIs, and system Git under `/usr/bin` or `/bin`. The npm launcher also requires Node **>=22** and npm/npx. Windows is unsupported. Local validation covers macOS, Python 3.9.6, Node 22.23.1 and npm 10.9.8; Linux and other runtime versions have no verified matrix here.
+
+With a supplied local tarball, no Git clone is needed:
+
+```sh
+npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.0.tgz -- taskclosurekit --help
+npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.0.tgz -- taskclosurekit --store /absolute/path/store status --next --json
+```
+
+These commands consume a local archive; they do not fetch an unpublished registry package. After a separately authorized publication, a pinned registry version could replace the archive. npm manages its own cache; review the package you supply.
+
+The launcher selects `/usr/bin/python3`, then `/bin/python3`, using the first existing candidate. It does not search npm's augmented `PATH` or retry another interpreter after a runtime failure. To use another preinstalled interpreter, set `TASKCLOSUREKIT_PYTHON` to its absolute executable path. The path is resolved once; its bytes/path/version remain part of the existing Python binding. The explicit override is a trusted executable choice, not a Python installer or sandbox.
+
+Python runs with `-I -S -B` and imports the bundled CLI from the package location. Caller cwd, argument boundaries, stdin/stdout/stderr, terminal confirmations and exit codes are retained. Project modules, `PYTHONPATH` and site customization cannot replace bundled imports. Node and npm themselves are not attested by the existing execution identity. See [CLI details](docs/CLI.md#npm-launcher).
+
+Source-checkout use remains available:
 
 ```sh
 git clone https://github.com/Karikatun/taskclosurekit.git
@@ -35,7 +50,9 @@ cd taskclosurekit
 python3 -B -m taskclosurekit --help
 ```
 
-Run the following commands from this checkout. `-B` avoids creating Python bytecode files. Keep the tool source unchanged during a task: its execution identity is part of the evidence binding.
+The quick start below runs from this checkout and reads bundled example files. For a supplied archive, replace each CLI invocation with the local npx prefix above and keep example inputs outside the checked repository/store. `-B` avoids Python bytecode. Keep the tool payload unchanged during a task: its execution identity includes `taskclosurekit/` and `tests/`.
+
+To produce a local archive from a reviewed checkout, use `npm pack --offline --ignore-scripts --pack-destination /absolute/path/to/output`. This packages files without publishing them. The archive includes both identity roots, documentation and public examples; its manifest uses `UNLICENSED` to preserve the absence of a license grant.
 
 The **repository being checked** must have an initial commit and an ordinary `.git` directory with SHA-1 loose objects. Packed objects, alternates and linked worktrees are rejected. A typical cloned target repository may therefore be unsupported. The quick start creates a supported disposable repository.
 
@@ -147,13 +164,13 @@ For machine consumers, read `operational.status` first, then `decision`, `reason
 - Preset execution has bounded time/output and POSIX resource limits; address-space limits apply only on Linux. Raw check output is discarded rather than stored.
 - The claim covers configured acceptance for one bound task state. It does not establish universal correctness, security certification or production readiness.
 
-The repository contains a local CLI and tests. It has no network CI adapter, SDK, completion hook, installer or deployment service. The CI interface has a test adapter, which is not evidence from a real CI provider. See [product boundaries](docs/PRODUCT_BOUNDARIES.md) and the [contract model](docs/V2_CONTRACT.md).
+The repository contains a local CLI and tests. It has no network CI adapter, SDK, completion hook, Python runtime installer or deployment service. The CI interface has a test adapter, which is not evidence from a real CI provider. See [product boundaries](docs/PRODUCT_BOUNDARIES.md) and the [contract model](docs/V2_CONTRACT.md).
 
 Do not put credentials, source `.env` files or personal data in task inputs or evidence. The journal stores task metadata and snapshots; discarding check output does not make the other files anonymous.
 
 ## Removal and task data
 
-There is no package uninstaller. Stop invoking the CLI and remove your own source checkout when no longer needed, after checking for local work you want to keep. Remove any wrapper or workflow integration you added separately.
+Stop invoking the CLI and remove your own source checkout or supplied archive when no longer needed, after checking for local work you want to keep. npm cache entries are separate; remove only entries you have identified and chosen to discard. Remove any wrapper or workflow integration you added separately. There is no TaskClosureKit data-removal hook.
 
 Task data is independent of the source checkout. Each `--store` directory contains the journal and its local HMAC key. External contracts, preset configurations and imported review/assertion files are separate. Removing the tool does not remove these files or the checked repository.
 
@@ -163,7 +180,7 @@ Before deleting a store, decide whether its evidence must be retained. To keep t
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md), [CONTEXT.md](CONTEXT.md) and the documentation for the area you change. Preserve unrelated work, define scope and acceptance criteria before editing, and validate affected behavior. Repository instructions govern engineering work; this README does not grant agents additional permissions.
+For source contributions, read [AGENTS.md](https://github.com/Karikatun/taskclosurekit/blob/master/AGENTS.md), [CONTEXT.md](CONTEXT.md) and the documentation for the area you change. Preserve unrelated work, define scope and acceptance criteria before editing, and validate affected behavior. Repository instructions govern engineering work; this README does not grant agents additional permissions.
 
 The test suite uses disposable fixtures and Python's standard test runner:
 

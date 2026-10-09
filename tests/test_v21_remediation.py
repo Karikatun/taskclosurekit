@@ -1,11 +1,14 @@
 """Regressions for independently confirmed v2.1 dispatch/lifecycle/persistence defects."""
 import json
+import os
+import signal
 from pathlib import Path
 from dataclasses import replace
 import subprocess
 import sys
 import time
 import unittest
+from unittest.mock import patch
 from taskclosurekit import application
 from taskclosurekit.execution.presets import Preset, parse_preset, validate_dispatch
 from taskclosurekit.execution.runner import bounded_process
@@ -57,6 +60,59 @@ class RemediationTests(unittest.TestCase):
         self.assertTrue(ready.exists(), "child did not reach its ready handshake")
         time.sleep(2.5)
         self.assertFalse(marker.exists(), "same-group child survived bounded runner return")
+
+    def test_interruption_survives_cleanup_after_owned_group_is_stopped(self):
+        x = self.fixture
+        marker = x.root / "interrupted-late-marker"
+        ready = x.root / "interrupted-child-ready"
+        child = "import time;from pathlib import Path;Path(" + repr(str(ready)) + ").write_text('ready');time.sleep(0.5);Path(" + repr(str(marker)) + ").write_text('late')"
+        handshake = "while not Path(" + repr(str(ready)) + ").exists():\n time.sleep(0.01)"
+        parent = "import os,signal,subprocess,sys,time;from pathlib import Path;subprocess.Popen([sys.executable,'-c'," + repr(child) + "],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);exec(" + repr(handshake) + ");os.kill(os.getppid(),signal.SIGINT);time.sleep(5)"
+        preset = Preset("interrupted", str(Path(sys.executable).resolve()), ("-c", parent),
+                        "contract-repository", (("PATH", "/usr/bin:/bin"),), 2, 65536,
+                        (marker.name, ready.name))
+        real_killpg = os.killpg
+        stopped_groups = set()
+
+        def stop_owned_group(pgid, signum):
+            # Reproduce an OS refusal after successful cleanup of a real group.
+            if pgid in stopped_groups:
+                raise PermissionError("owned process group is already stopped")
+            real_killpg(pgid, signum)
+            stopped_groups.add(pgid)
+
+        previous_handler = signal.signal(signal.SIGINT, signal.default_int_handler)
+        try:
+            with patch("os.killpg", side_effect=stop_owned_group):
+                with self.assertRaises(KeyboardInterrupt):
+                    bounded_process(preset, str(x.root))
+        finally:
+            signal.signal(signal.SIGINT, previous_handler)
+        self.assertTrue(ready.exists(), "child did not reach its ready handshake")
+        time.sleep(0.6)
+        self.assertFalse(marker.exists(), "same-group child survived interruption")
+
+    def test_first_cleanup_permission_failure_is_reported_after_retry_stops_group(self):
+        x = self.fixture
+        marker = x.root / "permission-failure-late-marker"
+        script = "import time;from pathlib import Path;time.sleep(0.5);Path(" + repr(str(marker)) + ").write_text('late')"
+        preset = Preset("cleanup-denied", str(Path(sys.executable).resolve()), ("-c", script),
+                        "contract-repository", (("PATH", "/usr/bin:/bin"),), 0.1, 65536,
+                        (marker.name,))
+        real_killpg = os.killpg
+        denied = []
+
+        def deny_first_cleanup(pgid, signum):
+            if not denied:
+                denied.append(pgid)
+                raise PermissionError("first cleanup denied")
+            real_killpg(pgid, signum)
+
+        with patch("os.killpg", side_effect=deny_first_cleanup):
+            with self.assertRaisesRegex(PermissionError, "first cleanup denied"):
+                bounded_process(preset, str(x.root))
+        time.sleep(0.6)
+        self.assertFalse(marker.exists(), "owned child survived cleanup retry")
 
     def test_unused_authorized_check_is_rejected_without_journal_mutation_and_resumes(self):
         x = self.fixture

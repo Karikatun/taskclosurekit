@@ -1,6 +1,6 @@
 # Архитектура TaskClosureKit
 
-CLI, application, domain, engine, snapshots, execution, storage и trust имеют разные обязанности. Единственный публичный namespace — `python3 -m taskclosurekit`. Контракт `taskclosurekit/v2` отделяет authority, acceptance, evidence, review, claim и closure; режим разработки остаётся во внешнем workflow.
+CLI, application, domain, engine, snapshots, execution, storage и trust имеют разные обязанности. Публичный CLI — `python3 -m taskclosurekit` из исходников и `taskclosurekit` через thin npm launcher. Контракт `taskclosurekit/v2` отделяет authority, acceptance, evidence, review, claim и closure; режим разработки остаётся во внешнем workflow.
 
 ```mermaid
 flowchart TD
@@ -34,7 +34,7 @@ Domain не импортирует CLI, filesystem, Git, subprocess, storage и�
 
 Это внутренний слой текущего продукта, а не второй CLI. Старый contract validator, event lifecycle и entry point удалены. `TaskContract.snapshot_policy()` передаёт private policy только данные, необходимые для проверки sources и write scope. Public API остаётся контрактом и CLI, а не private helpers.
 
-Execution identity включает полные деревья `taskclosurekit/` и `tests/`, системный Git, Python и профиль исполнения. Корень определяется относительно расположения private snapshot module. Отсутствующее дерево, неподдержанная запись, лимит или гонка блокируют capture. Тесты остаются входом execution identity текущей source distribution; установщик отсутствует.
+Execution identity включает полные деревья `taskclosurekit/` и `tests/`, системный Git, Python и профиль исполнения. Корень определяется относительно расположения private snapshot module. Отсутствующее дерево, неподдержанная запись, лимит или гонка блокируют capture. Тесты остаются входом execution identity source/npm distribution. `taskclosurekit/launcher.cjs` и `_npm_bootstrap.py` находятся внутри program root; npm payload включает полные Python trees `taskclosurekit/` и `tests/`. Bootstrap добавляет только trusted package parent после isolated Python startup. Node/npm runtime и package metadata вне roots не аттестуются. Установщик Python runtime отсутствует; Node wrapper не меняет domain contract. [CLI](CLI.md#npm-launcher) описывает runtime selection, signals и platform limits.
 
 ## Состояние и authority
 

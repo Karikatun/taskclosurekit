@@ -1,5 +1,25 @@
 # TaskClosureKit CLI v2.1
 
+## npm launcher
+
+`taskclosurekit` в npm payload — дополнительная точка входа в тот же Python CLI и контракт v2. Локальный tarball запускается без Git clone:
+
+```sh
+npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.0.tgz -- taskclosurekit --help
+npx --offline --yes --ignore-scripts --package=/absolute/path/taskclosurekit-2.1.0.tgz -- taskclosurekit --store /absolute/path/store status --next --json
+```
+
+Пакет version 2.1.0 не опубликован этим изменением; доступность имени в registry неизвестна. Он не содержит dependencies/install hooks, не устанавливает Python и не меняет stores при загрузке. Node >=22, Python >=3.9, macOS/Linux с POSIX resource APIs и системный Git нужны заранее. Проверена только локальная macOS matrix Python 3.9.6 / Node 22.23.1 / npm 10.9.8.
+
+`TASKCLOSUREKIT_PYTHON` задаёт явный абсолютный executable override. Иначе выбирается первый существующий `/usr/bin/python3`, затем `/bin/python3`; npm/project PATH не используется. Candidate разрешается в realpath, должен быть executable regular file; ошибка не вызывает fallback/install. Bootstrap `-I -S -B` импортирует bundled module из package parent, сохраняя cwd и argv. Эта граница защищает от подмены Python imports из caller project/PYTHONPATH/site customization, но не от владельца хоста или подменённого Node/npm/явного interpreter.
+
+Неподдержанные Node/Python/platform/resource APIs, отсутствующий системный Git и некорректный override отклоняются до CLI mutations. Launcher/bootstrap failure возвращает exit 3; с `--json` — обычный `taskclosurekit/result/v2` envelope с `operational.status: environment_error`, `operation: unknown` и причиной `unsupported_node_version`, `unsupported_python_version`, `unsupported_platform`, `unsupported_resource_limits`, `git_unavailable`, `python_unavailable`, `invalid_python_override` либо `python_launch_failed`. Parsed CLI operations сохраняют собственный envelope и exit codes 0–4.
+
+Python получает inherited stdin/stdout/stderr в отдельной session; Node ожидает его завершения и передаёт SIGINT/SIGTERM. Это предотвращает повторную доставку terminal SIGINT через общую process group и forwarding. Bootstrap поднимает KeyboardInterrupt при первом сигнале и игнорирует повторы во время cleanup; check runner очищает собственную process group. Отказ/прерывание подтверждения не создаёт approval. Прерывание check оставляет честный `interrupted_check`, который нельзя молча повторить. Interrupted launcher возвращает 130 для SIGINT и 143 для SIGTERM, пишет краткую причину в stderr. SIGKILL, crash Node/хоста и процессы, покинувшие process group, не получают гарантии cleanup; проверяйте persisted state после прерывания.
+
+`authorize`, `review --human`, `close` требуют прежнего exact digest через terminal stdin; JSON и piped input не заменяют operator action. npx как launcher инструмента не разрешает npx launchers внутри project-defined check presets: их dispatch grammar сохраняется.
+
+
 Локальный namespace — `python3 -m taskclosurekit`, без установки или внешних dependencies. Ни контракт, ни review JSON не исполняют произвольный shell.
 
 ## Запуск и файлы

@@ -36,11 +36,16 @@ def bounded_process(preset, repository):
     selector = selectors.DefaultSelector()
     counts = {"stdout": 0, "stderr": 0}
     timeout_hit = truncated = False
+    group_stopped = False
     def kill():
+        nonlocal group_stopped
+        if group_stopped:
+            return
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        group_stopped = True
     try:
         for name in counts:
             stream = getattr(process, name)
