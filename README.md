@@ -1,64 +1,185 @@
-TaskClosureKit is a verifiable task closure protocol for AI coding agents. It binds task authority, repository state, execution evidence and review to determine which completion claims are justified.
-
 # TaskClosureKit
 
-Главный вопрос продукта: **какое ограниченное утверждение об этой задаче допустимо прямо сейчас?** TaskClosureKit формализует task closure для конкретного контракта и снимка. Он сопоставляет разрешения, Git state, результаты исполнения, актуальные evidence, acceptance criteria и review; отдельное подтверждение оператора фиксирует итоговый claim.
+[English](README.md) · [Русский](README.ru.md)
 
-Для coding agent verification важно отличать выполненную проверку от вывода о готовности. Успешная проверка может стать stale evidence после изменения входов. Review относится к точному снимку и набору доказательств. Обязательное independent review без доверенного подтверждения независимости блокирует claim. Эти границы полезны в agentic software engineering, когда работу продолжает другой агент или инженер.
+TaskClosureKit is a local CLI that helps AI coding agents and engineers decide when an engineering task can be closed. It binds the agreed scope, repository state, check results and review into a recorded, limited completion claim.
 
-## Локальный срез v2.1
+A passing test can stop being relevant after another edit. An approval can refer to an older diff. A new agent can inherit a “done” message without supporting evidence. TaskClosureKit reports which evidence is current, what blocks closure and which action is permitted next.
 
-Новый namespace — `python3 -m taskclosurekit`. Контракт JSON имеет `schema: "taskclosurekit/v2"`; внешние зависимости и установка пакета не требуются. Основной путь:
+Its claim is **`configured-acceptance-satisfied`**: the required criteria in the task contract are satisfied by admissible, current evidence for the bound state. Its strength depends on the criteria you configure.
+
+## How it works
 
 ```text
-task create → authorize → baseline → изменения кода → check
-→ evaluate → review → evaluate → CLAIMABLE → close → CLOSED
+create → authorize → baseline → implement and stage → check
+       → evaluate → review → evaluate → CLAIMABLE → close → CLOSED
 ```
 
-`CLAIMABLE` означает, что текущие обязательные условия позволяют claim `configured-acceptance-satisfied`. `CLOSED` возникает только после отдельного действия closure authority. Claim сохраняет ограничения: он подтверждает выбранные критерии допустимыми актуальными evidence для данного контракта и снимка, а не все требования продукта.
+- A **contract** names the repository, allowed reads and writes, check IDs, acceptance criteria and review policy.
+- **Checks** run trusted presets and record results bound to the contract, repository and execution environment.
+- **Evaluation** checks authority, scope, evidence freshness and review. Historical `PASS` results can become stale; missing or unknown proof blocks the claim.
+- **Review** applies to the exact snapshot and evidence set. Required independence stays blocked without trusted proof of independence.
+- **Closure** is a separate operator action. `CLAIMABLE` means the conditions currently permit the claim; `CLOSED` means the operator has recorded it.
 
-Builtin `git-index-whitespace-v1` сохраняет ограниченную проверку staged diff с `HEAD`. Отдельная trusted project configuration добавляет meaningful presets tests/typecheck/build: contract выбирает только IDs, а определения фиксируются при `task create --preset-config`. Criteria независимо выбирают проверки через `all_of` или `any_of`. Каждый существенный CLI-вызов поддерживает `--json`; интеграция читает `decision` и `reasons`, отдельно от `operational.status`.
+`status --next --json` recovers the persisted task state and blockers for another process without replaying a conversation.
 
-Начать: [CLI v2 и полный цикл](docs/CLI.md), [пример контракта](examples/contract-v2.json), [модель доказательств](docs/V2_CONTRACT.md). Для демонстрации нужен небольшой одноразовый Git-репозиторий с исходным commit; snapshot пока поддерживает только ограниченную раскладку loose Git objects, поэтому обычный упакованный clone может быть отклонён. Контракт, review JSON и хранилище располагаются вне проверяемого репозитория; contract/review — также вне store.
+## Installation and requirements
 
-## Доверие и ограничения
+The current source version is **2.1.0**. Run it directly from a source checkout. It uses the Python standard library; there is no package installer or third-party Python dependency. This repository does not provide a published package or release.
 
-Task/closure authority семантически имеет класс `operator_confirmed`, источник `local-operator` и identity `unverified`. Старое schema spelling `human` сохраняется для совместимости. Локальное терминальное подтверждение привязано к точному authority digest, включая registry, но использует допущение `host_operator_assumed`: `identity_verified=false`. Доступ к терминалу сам по себе не удостоверяет человека. Отдельный `attest` сохраняет agent assertion как `agent_attested` metadata/digest без raw statement; assertion не становится measured evidence и не доказывает независимость.
+You need Python 3, a POSIX environment with the required resource-limit APIs, and system Git under `/usr/bin` or `/bin`. The runner does not support Windows. No minimum Python version or tested platform matrix is declared.
 
-Локальный HMAC защищает целостность поддержанных записей; он не защищает от вредоносного процесса с эквивалентными правами на хосте, который может подменить программу, ключ и журнал вместе. Разрешённый scope проверяется при оценке изменений и не является hostile-agent sandbox. Пресеты не принимают произвольный shell из контракта; runner ограничивает время и вывод, применяет POSIX resource limits, а адресное пространство ограничивает только на Linux. Сырой вывод проверки не сохраняется.
+```sh
+git clone https://github.com/Karikatun/taskclosurekit.git
+cd taskclosurekit
+python3 -B -m taskclosurekit --help
+```
 
-Проект не доказывает universal correctness, отсутствие багов или общую security certification; не удостоверяет identity без trusted identity provider; не заменяет CI, Git или in-toto/Witness/Sigstore. Локальный цикл и тесты не доказывают публикацию, production, deployment или работу внешнего провайдера. `measured_ci` представлен интерфейсом и fake adapter для тестов; сетевой CI adapter отсутствует.
+Run the following commands from this checkout. `-B` avoids creating Python bytecode files. Keep the tool source unchanged during a task: its execution identity is part of the evidence binding.
 
-## How TaskClosureKit differs
+The **repository being checked** must have an initial commit and an ordinary `.git` directory with SHA-1 loose objects. Packed objects, alternates and linked worktrees are rejected. A typical cloned target repository may therefore be unsupported. The quick start creates a supported disposable repository.
 
-Это сравнение границ по категориям, заданным в исходном запросе на миграцию; оно не является независимым аудитом актуальных возможностей проектов и не утверждает превосходство.
+## Quick start
 
-| Категория/проект | Рассматриваемая область |
-| --- | --- |
-| BeforeDone | Fresh verifier evidence / completion gate |
-| AET | Evidence plane |
-| Lians | State recovery / completion guard |
-| NAEOS | Engineering control plane |
-| in-toto / Witness | Общие attestations и provenance |
-| TaskClosureKit | Ограниченное закрытие инженерной задачи и обоснованные completion claims |
+This example changes one Python file and checks **staged whitespace only**. It demonstrates task closure; it does not test the Python program's behavior.
 
-Поддержанные проверки и recovery служат closure transaction. Они не превращают продукт в orchestrator, memory system или общую платформу evidence; [полный список non-goals](docs/PRODUCT_BOUNDARIES.md) задаёт продуктовую границу.
+### 1. Prepare an isolated example
 
-## Совместимость и статус
+This block creates a unique temporary directory containing a repository, an external contract and, later, a separate store. It reads the bundled contract as JSON and creates a baseline commit with a fixture identity. Your projects and global Git configuration are unaffected.
 
-`python3 -m taskproof` сохраняет отдельный legacy CLI и schema-1 журнал: [CLI v1](docs/CLI_V1.md). Он не является alias семантики v2. Старые журналы не конвертируются и не открываются v2; для v2 нужен новый контракт и новое хранилище. Не смешивайте namespaces или версии журнала в одном store.
+```sh
+TASKCLOSUREKIT_DEMO=$(python3 -B - <<'PY'
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 
-Локальный пакет объявляет breaking version **2.1.0**; release не опубликован. Готовность конкретного состояния подтверждается полным срезом, compatibility path и обязательными проверками; номер версии и подготовка этих документов сами по себе не являются такой проверкой. Удалённое имя и GitHub metadata остаются отдельным действием владельца.
+root = Path(tempfile.mkdtemp(prefix="taskclosurekit-demo-")).resolve()
+repo = root / "repo"
+repo.mkdir()
+(repo / "src").mkdir()
+(repo / "README.md").write_text("TaskClosureKit example.\n")
+(repo / "src/foo.py").write_text("value = 1\n")
+git = shutil.which("git", path="/usr/bin:/bin")
+env = {"PATH": "/usr/bin:/bin", "LC_ALL": "C",
+       "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+def run(*args):
+    subprocess.run([git, *args], cwd=repo, env=env, check=True,
+                   stdout=subprocess.DEVNULL)
+run("init", "--template=", "--initial-branch=master", "--object-format=sha1")
+run("add", "README.md", "src/foo.py")
+run("-c", "user.name=Example", "-c", "user.email=example@example.invalid",
+    "commit", "-m", "Example baseline")
+contract = json.loads(Path("examples/contract-v2.json").read_text())
+contract["repository"] = str(repo)
+contract["task"] = {"id": "quickstart", "title": "Check staged whitespace"}
+(root / "contract.json").write_text(json.dumps(contract))
+print(root)
+PY
+)
+printf '%s\n' "$TASKCLOSUREKIT_DEMO"
+```
 
-- [Контекст](CONTEXT.md), [описание продукта](docs/PRODUCT_BRIEF.md)
-- [Архитектура и staged migration](docs/ARCHITECTURE_V2.md)
-- [План и критерии завершения](docs/IMPLEMENTATION_PLAN.md)
-- [Имя, локальная миграция и рекомендации GitHub](docs/MIGRATION_V2.md)
+Keep the printed path. The store must not exist before `task create`, which creates it with private permissions. Paths must be absolute and physically outside the checked repository. Contract, review, assertion and preset configuration files must also stay outside the store. Symlink aliases are rejected.
 
-## Real engineering checks
+### 2. Create and authorize the task
 
-[Engineering contract](examples/contract-engineering-v21.json) и [trusted presets](examples/presets-engineering-v21.json) демонстрируют tests/typecheck/build composition на нейтральном C fixture. Это templates с paths, которые оператор заменяет и проверяет перед CREATE; они не устанавливают runtime или dependencies. [Reference mapping web-app-template](docs/WEB_APP_TEMPLATE_REFERENCE.md) описывает небольшую реальную задачу, отдельно от синтетических fixture runs.
+Run each command separately in an interactive terminal:
 
-Изменение config/dispatcher делает authority stale и требует нового task; изменение executable/runtime — STALE_ENVIRONMENT; изменение source/tests/manifests/lock/config inputs — STALE_INPUT. Conservative full snapshots могут инвалидировать больше evidence, чем минимальный dependency graph. PASS checks допускают только bounded configured acceptance, не universal correctness.
+```sh
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" task create "$TASKCLOSUREKIT_DEMO/contract.json" --json
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" authorize --json
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" baseline --json
+```
 
-Для внешнего workflow используется [универсальный CLI JSON interface](docs/CLI.md#machine-envelope). `CLAIMABLE` остаётся отдельным от `CLOSED`; required independence при UNKNOWN блокирует claim. [Migration v2.1](docs/MIGRATION_V21.md) описывает новые exit semantics и совместимость.
+`authorize` asks you to type the exact displayed action digest after inspecting the contract. Later, `review --human` and `close` require their own terminal confirmations. JSON output does not bypass confirmation; piped input cannot provide it. For real tasks, these are operator decisions. An agent assertion cannot replace them.
+
+### 3. Make the permitted change and check it
+
+```sh
+python3 -B - "$TASKCLOSUREKIT_DEMO/repo/src/foo.py" <<'PY'
+from pathlib import Path
+import sys
+Path(sys.argv[1]).write_text("value = 2\n")
+PY
+git -C "$TASKCLOSUREKIT_DEMO/repo" add src/foo.py
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" check git-index-whitespace-v1 --json
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" evaluate --json
+```
+
+The check should record `PASS`. Evaluation should return `NOT_CLAIMABLE`, reason `missing_trusted_review` and exit code **1**, because review is still missing. This is the expected intermediate result.
+
+### 4. Review and close
+
+Inspect the staged diff first. Then run each TaskClosureKit command separately and confirm the review and closure prompts:
+
+```sh
+git -C "$TASKCLOSUREKIT_DEMO/repo" diff --cached
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" review --human --json
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" evaluate --json
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" close --json
+python3 -B -m taskclosurekit --store "$TASKCLOSUREKIT_DEMO/store" status --next --json
+```
+
+Evaluation should become `CLAIMABLE`; explicit closure should record `CLOSED`. Later edits require fresh checks and review, or a new task when authority changes. A recorded closure remains a claim about its original bound state.
+
+## Using it in your workflow
+
+Start each real task with a new contract and store. Declare narrow scopes and meaningful acceptance criteria. The built-in `git-index-whitespace-v1` checks only staged whitespace. For tests, type checking or builds, supply a separately reviewed trusted preset configuration at creation:
+
+```sh
+python3 -B -m taskclosurekit --store /absolute/path/to/new-store task create /absolute/path/to/contract.json --preset-config /absolute/path/to/presets.json --json
+```
+
+The contract selects preset IDs; executable paths, arguments, environment, limits, inputs and permitted outputs belong to the trusted configuration. Adapt and inspect the [engineering example](examples/contract-engineering-v21.json) and [preset template](examples/presets-engineering-v21.json) before use. They do not install their runtimes.
+
+Keep contract sources unchanged, write only within the agreed scope, and rerun affected checks after edits. Tool, configuration or runtime changes can invalidate authority or execution evidence. Conservative snapshots can also make earlier checks stale when another check creates outputs. Follow the reported blocker rather than editing JSON to claim greater trust.
+
+For machine consumers, read `operational.status` first, then `decision`, `reasons` and freshness. `operational.status: "ok"` can accompany a blocked claim. Exit codes: **0** successful unblocked operation; **1** policy-blocked claim; **2** invalid input/state; **3** environment/internal failure; **4** stale or unknown state. The [CLI reference](docs/CLI.md#machine-envelope) describes the envelope and failure branches.
+
+## Trust and current limits
+
+- Scope is checked during evaluation. It does not sandbox an agent or prevent host reads and writes.
+- Terminal confirmation assumes a local operator; it does not verify human identity or prove reviewer independence. Imported reviews and assertions retain agent-attested trust.
+- Local HMAC records detect supported integrity failures. An equally privileged host process can replace the program, key and journal together.
+- Preset execution has bounded time/output and POSIX resource limits; address-space limits apply only on Linux. Raw check output is discarded rather than stored.
+- The claim covers configured acceptance for one bound task state. It does not establish universal correctness, security certification or production readiness.
+
+The repository contains a local CLI and tests. It has no network CI adapter, SDK, completion hook, installer or deployment service. The CI interface has a test adapter, which is not evidence from a real CI provider. See [product boundaries](docs/PRODUCT_BOUNDARIES.md) and the [contract model](docs/V2_CONTRACT.md).
+
+Do not put credentials, source `.env` files or personal data in task inputs or evidence. The journal stores task metadata and snapshots; discarding check output does not make the other files anonymous.
+
+## Removal and task data
+
+There is no package uninstaller. Stop invoking the CLI and remove your own source checkout when no longer needed, after checking for local work you want to keep. Remove any wrapper or workflow integration you added separately.
+
+Task data is independent of the source checkout. Each `--store` directory contains the journal and its local HMAC key. External contracts, preset configurations and imported review/assertion files are separate. Removing the tool does not remove these files or the checked repository.
+
+Before deleting a store, decide whether its evidence must be retained. To keep the record, preserve the complete private store, including the key, together with relevant external inputs. Live recovery also depends on the original bound paths, repository state and execution identity; an archive is not automatically resumable. Deleting the key or journal loses verifiable recovery. Remove only the exact directories and files you chose to discard. The quick start's printed temporary directory contains all demonstration data.
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md), [CONTEXT.md](CONTEXT.md) and the documentation for the area you change. Preserve unrelated work, define scope and acceptance criteria before editing, and validate affected behavior. Repository instructions govern engineering work; this README does not grant agents additional permissions.
+
+The test suite uses disposable fixtures and Python's standard test runner:
+
+```sh
+python3 -B -m unittest discover -s tests -v
+```
+
+If the system temporary directory is heavily populated, use a temporary directory with few entries for fixture runs: physical-path validation is bounded. A passing local suite does not establish remote CI, publication or deployment.
+
+## Documentation
+
+- [CLI commands, JSON results and recovery](docs/CLI.md)
+- [Contracts, presets and evidence bindings](docs/V2_CONTRACT.md)
+- [Product model](docs/PRODUCT_BRIEF.md) and [boundaries](docs/PRODUCT_BOUNDARIES.md)
+- [Engineering fixture](examples/engineering-fixture/README.md)
+
+Detailed documentation is currently in Russian. Both README files describe the same current functionality.
+
+## License
+
+This repository currently contains no `LICENSE` file or declared software license. A license has not been specified here.
