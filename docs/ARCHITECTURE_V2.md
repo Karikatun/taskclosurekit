@@ -27,7 +27,7 @@ Domain не импортирует CLI, filesystem, Git, subprocess, storage и�
 
 | Модуль | Обязанность |
 | --- | --- |
-| `_primitives.snapshot` | Физическая идентичность и exact spelling путей, symlink/race defenses, bounded inventory и чтение, проверка loose Git objects и source/index binding |
+| `_primitives.snapshot` | Физическая идентичность и exact spelling путей, symlink/race defenses, bounded inventory и чтение, проверка loose/packed SHA-1 Git objects, linked worktree и source/index binding |
 | `_primitives.policy` | Структурная проверка снимков, неизменность источников и Git controls, сравнение изменений с write scope |
 | `_primitives.runner` | Фиксированный builtin whitespace argv и Git metadata reads, sanitized environment, timeout/output/resource limits |
 | `_primitives.store` | Private atomic HMAC journal, sequence/run binding, bounded JSON и fail-closed integrity read |
@@ -46,8 +46,17 @@ Review verdict, source trust, independence и freshness независимы. Lo
 
 ## Внешние interfaces
 
+`integration.policy` отделяет acceptance working content от полной byte inspection, controls и staged review binding. `integration.adapters` задаёт versioned Python protocols и typed verified host results. Provider code инжектируется host, не выбирается task/config JSON. Требования source/run/context/capability verification принадлежат boundary; реализация production host/CI provider и сеть отсутствуют.
+
+`integration.budgets` задаёт finite capture limits, `integration.dependencies` связывает actual initial material root/provenance и удерживает authenticated complete host guard на весь capture/check/required append. `ProtectedImmutableRoot` включает exact plain live state и built-in mutex; core проверяет physical/provenance/live state/time после capture и перед append, без host callback после final capture. Instantaneous proof capability не достаточна для reuse. Default production provider отсутствует; mutex сам не защищает от внешних процессов. Replay проверяет exact cached entries/proof/root bindings отдельно от HMAC. Application сохраняет обязательный preconsume STARTED/CONSUMED audit delegated close и выполняет final capture/pure gates после всех внешних callbacks.
+
 [CLI envelope](CLI.md#machine-envelope) предназначен внешнему workflow. Proposal/spec/design, decomposition и model selection остаются его ответственностью. [Reference mapping](WEB_APP_TEMPLATE_REFERENCE.md) не исполняет внешний проект.
 
 `measured_ci` имеет seam и fake/test adapter. `bind_commit` создаёт CommitSnapshotBinding только после clean repository status и стабильного bounded capture. CI PASS для HEAD не доказывает dirty worktree/index. Реального сетевого CI adapter нет; JSON не назначает trust.
 
 [Границы безопасности](SAFETY_BOUNDARIES.md), [контракт](V2_CONTRACT.md) и [совместимость](COMPATIBILITY.md) фиксируют поддержанные ограничения. Ни имя, ни green checks не разрешают публикацию или deployment.
+
+
+## Контракт интеграции
+
+[Контракт интеграции](INTEGRATION.md)

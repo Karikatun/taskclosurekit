@@ -1,0 +1,20 @@
+{
+  "schema": "taskclosurekit/integration/v2",
+  "stage_equivalence": "content",
+  "roots": [
+    {
+      "path": ".build",
+      "type": "generated",
+      "acceptance": "exclude",
+      "rationale": "Outputs не читаются настроенными source checks; bytes остаются в полной scope inspection.",
+      "dependency_provenance": null
+    }
+  ],
+  "coverage": "bounded-host-proof-or-rehash",
+  "capture_budget": {
+    "file_bytes": 33554432,
+    "aggregate_bytes": 268435456,
+    "entries": 20000,
+    "seconds": 30
+  }
+}

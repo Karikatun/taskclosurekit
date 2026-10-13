@@ -21,11 +21,10 @@ def environment():
             "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_ATTR_NOSYSTEM": "1",
             "GIT_OPTIONAL_LOCKS": "0", "GIT_TERMINAL_PROMPT": "0",
-            "GIT_CONFIG_COUNT": "4", "GIT_CONFIG_KEY_0": "core.fsmonitor",
-            "GIT_CONFIG_VALUE_0": "false", "GIT_CONFIG_KEY_1": "core.hooksPath",
-            "GIT_CONFIG_VALUE_1": os.devnull, "GIT_CONFIG_KEY_2": "core.pager",
-            "GIT_CONFIG_VALUE_2": "cat", "GIT_CONFIG_KEY_3": "core.untrackedCache",
-            "GIT_CONFIG_VALUE_3": "false"}
+            "GIT_CONFIG_COUNT": "3", "GIT_CONFIG_KEY_0": "core.fsmonitor",
+            "GIT_CONFIG_VALUE_0": "false", "GIT_CONFIG_KEY_1": "core.pager",
+            "GIT_CONFIG_VALUE_1": "cat", "GIT_CONFIG_KEY_2": "core.untrackedCache",
+            "GIT_CONFIG_VALUE_2": "false"}
 
 
 def resource_profile():
@@ -72,6 +71,16 @@ def _bounded_process(argv, cwd, env, timeout=TIMEOUT, output_limit=OUTPUT_LIMIT,
     data = {"stdout": bytearray(), "stderr": bytearray()}
     timeout_hit = False
     truncated = False
+    group_stopped = False
+    def kill_group():
+        nonlocal group_stopped
+        if group_stopped:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        group_stopped = True
     try:
         for name in counts:
             stream = getattr(process, name)
@@ -96,28 +105,22 @@ def _bounded_process(argv, cwd, env, timeout=TIMEOUT, output_limit=OUTPUT_LIMIT,
             if truncated:
                 break
         if timeout_hit or truncated:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            kill_group()
         # Also kill an escaped descendant retaining a pipe at the deadline above.
         try:
             process.wait(timeout=max(0.01, timeout - (time.monotonic() - started)))
         except subprocess.TimeoutExpired:
             timeout_hit = True
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            kill_group()
             process.wait()
     except BaseException:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        kill_group()
         process.wait()
         raise
     finally:
+        # The leader's success does not prove that its background children ended.
+        kill_group()
+        process.wait()
         selector.close()
         process.stdout.close()
         process.stderr.close()

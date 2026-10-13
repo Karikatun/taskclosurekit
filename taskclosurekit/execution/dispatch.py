@@ -207,7 +207,7 @@ def package_dispatch(command, args, preset, entries, repository, write_scope):
         return
     if mode == "run" or command != "bun" and mode in ("test", "start", "stop", "restart"):
         manifest = cwd + "package.json"
-        if manifest not in preset.authority_inputs:
+        if manifest not in preset.authority_inputs and manifest not in {item for item, _, _ in preset.dispatcher_inputs}:
             raise RuntimeError("undeclared_command_authority")
         if entries.get(manifest, {}).get("kind") != "file":
             raise RuntimeError("preset_launch_target_required")

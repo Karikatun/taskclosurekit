@@ -4,7 +4,7 @@
     "id": "contracts-error-code-v21",
     "title": "Добавить поддержанный error code и regression test"
   },
-  "repository": "/absolute/path/to/web-app-template",
+  "repository": "/absolute/path/to/project",
   "authority": {
     "task": {
       "issuer": "human"

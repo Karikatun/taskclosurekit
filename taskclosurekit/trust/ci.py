@@ -11,6 +11,15 @@ def hash_string(value):
     return value
 
 @dataclass(frozen=True)
+class VerifiedCIRuntime:
+    run_id: str
+    inputs_digest: str
+    execution_digest: str
+    verified_ns: int
+    source_authenticated: bool
+    runtime_verified: bool
+
+@dataclass(frozen=True)
 class VerifiedCIResult:
     repository: str
     commit: str
@@ -20,6 +29,7 @@ class VerifiedCIResult:
     criteria: tuple
     result: str
     artifact_digest: str
+    runtime_proof: object = None
 
 class CIAdapter:
     """Trusted host configuration, never instantiated from contract/imported JSON.
@@ -45,6 +55,14 @@ def accept_ci(adapter, selector, contract, current, sequence, recorded_ns, *, co
     verified=adapter.verify(selector)
     if not isinstance(verified,VerifiedCIResult):
         raise RuntimeError("unverified_ci_evidence")
+    runtime=verified.runtime_proof
+    if (not isinstance(runtime,VerifiedCIRuntime) or type(runtime.run_id) is not str or
+        not 1<=len(runtime.run_id)<=128 or any(ord(c)<32 for c in runtime.run_id) or
+        runtime.inputs_digest!=current.digest or runtime.execution_digest!=current.execution or
+        type(runtime.verified_ns) is not int or type(recorded_ns) is not int or
+        not 0<runtime.verified_ns<=recorded_ns or recorded_ns-runtime.verified_ns>600*10**9 or
+        runtime.source_authenticated is not True or runtime.runtime_verified is not True):
+        raise RuntimeError("unverified_ci_runtime")
     expected=tuple(c.id for c in contract.acceptance if verified.preset_id in c.evidence)
     if (verified.repository!=contract.repository or verified.commit!=current.commit or
         verified.workflow_identity!=adapter.trusted_workflow_identity or
@@ -59,6 +77,9 @@ def accept_ci(adapter, selector, contract, current, sequence, recorded_ns, *, co
         "workflow_identity":verified.workflow_identity,"selected_check":verified.selected_check,
         "preset_id":verified.preset_id,"criteria":list(verified.criteria),
         "adapter_identity":adapter.adapter_identity,"artifact_digest":verified.artifact_digest}
+    verification["runtime"]={"run_id":runtime.run_id,"inputs_digest":runtime.inputs_digest,
+        "execution_digest":runtime.execution_digest,"verified_ns":runtime.verified_ns,
+        "source_authenticated":True,"runtime_verified":True}
     evidence=Evidence("ci-"+str(sequence),verified.preset_id,"measured_ci",
         EvidenceSource("ci-adapter","measured_ci"),contract.digest,current,expected,"PASS",sequence,recorded_ns)
     return evidence,verification

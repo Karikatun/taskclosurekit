@@ -29,8 +29,15 @@ Claim `configured-acceptance-satisfied` означает, что все обяз
 
 ## Real engineering checks
 
+Локальный source срез добавляет [минимальный контракт интеграции](INTEGRATION.md): finite trusted execution policy, explicit root/stage rules и typed Python host ports. Это capabilities negotiation, а не обещание поддержки любой среды. Provider modules не загружаются из JSON; production CI/identity/immutable-dependency providers отсутствуют. Большой runtime rehash, POSIX-only cleanup и неполный автоматически известный indirect tool graph остаются ограничениями. Closed local claim не предоставляет будущие push/deploy или иной scope.
+
 Заранее подтверждённые project presets могут представлять tests, typecheck и build. Contract выбирает только их IDs; executable, argv, cwd, environment, limits, permitted writes и relevant inputs принадлежат отдельной trusted configuration. Конфигурация фиксируется при создании transaction и подтверждается оператором вместе с authority. Изменённая конфигурация не может сама разрешить новую проверку в текущей задаче.
 
 PASS означает результат выбранной проверки на связанном состоянии. Tests проверяют наблюдаемые сценарии, typecheck — свойства выбранной системы типов, build — выбранный процесс сборки. Ни один результат, ни их композиция не доказывают universal correctness, отсутствие багов или production readiness. Scope violation блокирует claim даже при всех PASS. Required independence без trusted provider остаётся UNKNOWN.
 
-Синтетические engineering fixtures демонстрируют механизм closure, а [mapping web-app-template](WEB_APP_TEMPLATE_REFERENCE.md) показывает возможные реальные capabilities. Это разные уровни evidence: passing fixture не означает, что проверки внешнего проекта были выполнены.
+Синтетические engineering fixtures демонстрируют механизм closure, а [Нейтральный пример](WEB_APP_TEMPLATE_REFERENCE.md) показывает возможные реальные capabilities. Это разные уровни evidence: passing fixture не означает, что проверки внешнего проекта были выполнены.
+
+
+## Контракт интеграции
+
+[Контракт интеграции](INTEGRATION.md)

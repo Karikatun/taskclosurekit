@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import shutil
 import stat
+import struct
 import sys
 import time
 import zlib
@@ -102,19 +103,23 @@ def path_within(path, boundary):
 
 
 class Budget:
-    def __init__(self):
+    def __init__(self, limits=None):
         self.started = time.monotonic()
         self.count = 0
         self.bytes = 0
+        self.limits = limits
+        self.file_limit = limits["file_bytes"] if limits else FILE_LIMIT
 
     def check(self):
-        if (self.count > COUNT_LIMIT or self.bytes > AGGREGATE_LIMIT or
-                time.monotonic() - self.started > SNAPSHOT_SECONDS):
+        if (self.count > (self.limits["entries"] if self.limits else COUNT_LIMIT) or
+                self.bytes > (self.limits["aggregate_bytes"] if self.limits else AGGREGATE_LIMIT) or
+                time.monotonic() - self.started > (self.limits["seconds"] if self.limits else SNAPSHOT_SECONDS)):
             raise RuntimeError("snapshot_limit")
 
 
-def regular(path, budget, limit=FILE_LIMIT, content=False, dir_fd=None):
+def regular(path, budget, limit=None, content=False, dir_fd=None):
     """Read at most limit+1 using a non-following descriptor and identity recheck."""
+    limit = budget.file_limit if limit is None and hasattr(budget,"file_limit") else FILE_LIMIT if limit is None else limit
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     fd = os.open(str(path), flags, dir_fd=dir_fd)
     try:
@@ -151,7 +156,7 @@ def regular(path, budget, limit=FILE_LIMIT, content=False, dir_fd=None):
         os.close(fd)
 
 
-def inventory(root, budget=None):
+def inventory(root, budget=None, *, metadata_exclusions=(), immutable_entries=None):
     root = safe_path(root)
     budget = budget or Budget()
     entries = {}
@@ -169,6 +174,22 @@ def inventory(root, budget=None):
                 mode = item.stat(follow_symlinks=False).st_mode
                 if stat.S_ISDIR(mode):
                     entries[relative] = {"kind": "directory", "mode": stat.S_IMODE(mode)}
+                    if immutable_entries and relative in immutable_entries:
+                        binding=immutable_entries[relative]
+                        child_fd=os.open(item.name,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW,dir_fd=directory_fd)
+                        try:
+                            opened=os.fstat(child_fd)
+                            current=os.stat(item.name,dir_fd=directory_fd,follow_symlinks=False)
+                            expected=binding["physical"]
+                            if any((entry.st_dev,entry.st_ino,stat.S_IMODE(entry.st_mode)) != (expected["device"],expected["inode"],expected["mode"]) for entry in (opened,current)):
+                                raise RuntimeError("immutable_root_binding_mismatch")
+                            cached=binding["entries"]
+                            entries.update({relative+"/"+name:entry for name,entry in cached.items()})
+                            budget.count+=len(cached);budget.check()
+                        finally:os.close(child_fd)
+                        continue
+                    if relative in metadata_exclusions:
+                        continue
                     child_fd = os.open(item.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                                        dir_fd=directory_fd)
                     try:
@@ -224,9 +245,9 @@ def loose_object_entry(path, entry):
     if not isinstance(entry, dict):
         return False
     if entry.get("kind") == "directory":
-        return re.fullmatch(r"\.git/objects/[0-9a-f]{2}", path) is not None
+        return re.fullmatch(r"\.git/(?:common/)?objects/[0-9a-f]{2}", path) is not None
     if entry.get("kind") == "file":
-        return re.fullmatch(r"\.git/objects/[0-9a-f]{2}/[0-9a-f]{38}", path) is not None
+        return re.fullmatch(r"\.git/(?:common/)?objects/[0-9a-f]{2}/[0-9a-f]{38}", path) is not None
     return False
 
 
@@ -288,76 +309,318 @@ def validate_loose_bytes(compressed, oid, budget):
         raise RuntimeError("git_object_identity_mismatch")
 
 
-def validate_git_objects(repo, entries, budget):
-    """Loose-only input envelope, checked before Git consumes repository data."""
-    if entries.get(".git/objects", {}).get("kind") != "directory":
-        raise RuntimeError("unsupported_git_object_layout")
-    objects = []
-    for path, entry in entries.items():
-        budget.check()
-        if not path.startswith(".git/objects/"):
-            continue
-        if path in (".git/objects/info/alternates", ".git/objects/info/http-alternates"):
-            raise RuntimeError("unsupported_git_control")
-        if path in (".git/objects/info", ".git/objects/pack") and entry["kind"] == "directory":
-            continue
-        if not loose_object_entry(path, entry):
-            raise RuntimeError("unsupported_git_object_layout")
-        if entry["kind"] == "file":
-            objects.append(path)
-
-    def open_directory(name, parent):
-        before = os.stat(name, dir_fd=parent, follow_symlinks=False)
-        fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+def directory_identity(path, *, optional=False):
+    path = safe_path(path)
+    try:
+        before = path.lstat()
+    except FileNotFoundError:
+        if optional:
+            return {"path": str(path), "exists": False, "device": None, "inode": None}
+        raise RuntimeError("unsupported_git_layout") from None
+    if not stat.S_ISDIR(before.st_mode):
+        raise RuntimeError("unsupported_git_layout")
+    fd = os.open(str(path), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
         opened = os.fstat(fd)
         if (before.st_dev, before.st_ino, before.st_mode) != (opened.st_dev, opened.st_ino, opened.st_mode):
-            os.close(fd)
             raise RuntimeError("snapshot_race")
-        return fd
-
-    root_fd = os.open(str(repo), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        git_fd = open_directory(".git", root_fd)
-        try:
-            objects_fd = open_directory("objects", git_fd)
-            try:
-                for path in objects:
-                    budget.check()
-                    fanout, name = path.split("/")[-2:]
-                    directory_fd = open_directory(fanout, objects_fd)
-                    try:
-                        identity, compressed = regular(name, budget, content=True, dir_fd=directory_fd)
-                        if identity != entries[path]:
-                            raise RuntimeError("snapshot_race")
-                        validate_loose_bytes(compressed, fanout + name, budget)
-                    finally:
-                        os.close(directory_fd)
-            finally:
-                os.close(objects_fd)
-        finally:
-            os.close(git_fd)
     finally:
-        os.close(root_fd)
+        os.close(fd)
+    return {"path": str(path), "exists": True, "device": before.st_dev, "inode": before.st_ino}
 
 
-def validate_git(repo, git):
+def metadata_path(raw, relative_to):
+    try:
+        text = raw.decode("utf-8", "strict")
+    except UnicodeError:
+        raise RuntimeError("unsupported_git_layout") from None
+    if not text.endswith("\n") or "\n" in text[:-1] or not text[:-1] or "\0" in text:
+        raise RuntimeError("unsupported_git_layout")
+    value = Path(text[:-1])
+    value = value if value.is_absolute() else relative_to / value
+    return safe_path(Path(os.path.normpath(str(value))))
+
+
+def git_layout(repo, budget):
     dot = repo / ".git"
-    if not dot.is_dir() or dot.is_symlink():
-        raise RuntimeError("ordinary_git_directory_required")
-    for forbidden in ("commondir", "gitdir", "worktrees", "modules", "shallow", "config.worktree",
-                      "info/grafts", "refs/replace", "objects/info/http-alternates"):
-        if (dot / forbidden).exists():
+    info = dot.lstat()
+    links = {"gitfile": None, "commondir": None, "backlink": None}
+    if stat.S_ISDIR(info.st_mode):
+        kind = "ordinary"
+        git_dir = common = safe_path(dot)
+        if (dot / "commondir").exists() or (dot / "gitdir").exists():
+            raise RuntimeError("unsupported_git_layout")
+    elif stat.S_ISREG(info.st_mode):
+        kind = "linked"
+        links["gitfile"], raw = regular(dot, budget, 4096, True)
+        if not raw.startswith(b"gitdir: "):
+            raise RuntimeError("unsupported_git_layout")
+        git_dir = metadata_path(raw[8:], repo)
+        links["commondir"], raw = regular(git_dir / "commondir", budget, 4096, True)
+        common = metadata_path(raw, git_dir)
+        # Only Git's registered linked-worktree layout is accepted. An arbitrary
+        # gitfile is not authority to inspect a different repository.
+        if git_dir.parent != common / "worktrees":
+            raise RuntimeError("unsupported_git_layout")
+        links["backlink"], raw = regular(git_dir / "gitdir", budget, 4096, True)
+        if metadata_path(raw, git_dir) != dot:
+            raise RuntimeError("git_worktree_identity_mismatch")
+    else:
+        raise RuntimeError("unsupported_git_layout")
+    return {"schema": "git-layout/v1", "kind": kind,
+            "worktree": directory_identity(repo), "git_dir": directory_identity(git_dir),
+            "common_dir": directory_identity(common), "link_bindings": links,
+            "object_format": "sha1", "index_format": 2, "hooks_root": None}
+
+
+def metadata_inventory(repo, layout, budget, immutable_entries=None):
+    entries = inventory(repo, budget, metadata_exclusions=(".git/worktrees",),immutable_entries=immutable_entries)
+    if any(path == ".git/hooks-bound" or path.startswith(".git/hooks-bound/") for path in entries):
+        raise RuntimeError("unsupported_git_layout")
+    if layout["kind"] == "linked":
+        git_dir = Path(layout["git_dir"]["path"])
+        common = Path(layout["common_dir"]["path"])
+        for prefix, root in ((".git/", git_dir), (".git/common/", common)):
+            excluded = ("worktrees",) if root == common else ()
+            for path, entry in inventory(root, budget, metadata_exclusions=excluded).items():
+                key = prefix + path
+                if key in entries:
+                    raise RuntimeError("unsupported_git_layout")
+                entries[key] = entry
+    hooks = layout.get("hooks_root")
+    if hooks and hooks["exists"]:
+        for path, entry in inventory(Path(hooks["path"]), budget).items():
+            entries[".git/hooks-bound/" + path] = entry
+    return entries
+
+
+def validate_pack_bytes(data, expected_oid, budget):
+    """Bound the pack envelope and delta result sizes before a Git consumer."""
+    if len(data) < 32 or data[:4] != b"PACK":
+        raise RuntimeError("invalid_git_object")
+    version, count = struct.unpack(">II", data[4:12])
+    if version not in (2, 3) or count > COUNT_LIMIT:
+        raise RuntimeError("unsupported_git_pack_format")
+    if hashlib.sha1(data[:-20]).digest() != data[-20:] or data[-20:].hex() != expected_oid:
+        raise RuntimeError("git_object_identity_mismatch")
+    offset, end = 12, len(data) - 20
+    for unused in range(count):
+        budget.check()
+        if offset >= end:
+            raise RuntimeError("invalid_git_object")
+        first = data[offset]; offset += 1
+        object_type, size, shift, byte = (first >> 4) & 7, first & 15, 4, first
+        while byte & 128:
+            if offset >= end or shift > 63:
+                raise RuntimeError("invalid_git_object")
+            byte = data[offset]; offset += 1
+            size |= (byte & 127) << shift; shift += 7
+        if object_type not in (1, 2, 3, 4, 6, 7):
+            raise RuntimeError("invalid_git_object")
+        if size > FILE_LIMIT:
+            raise RuntimeError("git_object_limit")
+        if object_type == 6:
+            if offset >= end:
+                raise RuntimeError("invalid_git_object")
+            byte = data[offset]; offset += 1
+            while byte & 128:
+                if offset >= end:
+                    raise RuntimeError("invalid_git_object")
+                byte = data[offset]; offset += 1
+        elif object_type == 7:
+            offset += 20
+        if offset >= end:
+            raise RuntimeError("invalid_git_object")
+        inflater, body = zlib.decompressobj(), bytearray()
+        total = 0
+        try:
+            cursor, pending = offset, b""
+            while not inflater.eof:
+                budget.check()
+                if not pending:
+                    pending = data[cursor:min(cursor + 65536, end)]
+                    cursor += len(pending)
+                output = inflater.decompress(pending, min(65536, size + 1 - total))
+                pending = inflater.unconsumed_tail
+                total += len(output); budget.bytes += len(output); budget.check()
+                if total > size:
+                    raise RuntimeError("invalid_git_object")
+                if object_type in (6, 7):
+                    body.extend(output)
+                if not output and not pending and not inflater.eof:
+                    raise RuntimeError("invalid_git_object")
+        except zlib.error:
+            raise RuntimeError("invalid_git_object") from None
+        if total != size:
+            raise RuntimeError("invalid_git_object")
+        # unused_data begins at the next pack record, including when max_length
+        # caused multiple bounded inflate calls.
+        offset = cursor - len(inflater.unused_data)
+        if object_type in (6, 7):
+            position = 0
+            for ignored in range(2):
+                value = 0; shift = 0
+                while True:
+                    if position >= len(body) or shift > 63:
+                        raise RuntimeError("invalid_git_object")
+                    byte = body[position]; position += 1
+                    value |= (byte & 127) << shift; shift += 7
+                    if not byte & 128:
+                        break
+                if value > FILE_LIMIT:
+                    raise RuntimeError("git_object_limit")
+    if offset != end:
+        raise RuntimeError("invalid_git_object")
+
+
+def validate_pack_index(data, pack_oid):
+    if len(data) < 8 + 1024 + 40 or data[:8] != b"\xfftOc\x00\x00\x00\x02":
+        raise RuntimeError("unsupported_git_pack_index_format")
+    fanout = struct.unpack(">256I", data[8:1032])
+    if any(a > b for a, b in zip(fanout, fanout[1:])) or fanout[-1] > COUNT_LIMIT:
+        raise RuntimeError("invalid_git_object")
+    count = fanout[-1]
+    minimum = 1032 + count * 28 + 40
+    if len(data) < minimum or (len(data) - minimum) % 8:
+        raise RuntimeError("invalid_git_object")
+    if data[-40:-20].hex() != pack_oid or hashlib.sha1(data[:-20]).digest() != data[-20:]:
+        raise RuntimeError("git_object_identity_mismatch")
+
+
+def object_regular(common, relative, budget):
+    """Open every object ancestor without following links, including under races."""
+    path = common / "objects" / relative
+    parent = Path(path.anchor)
+    fd = os.open(str(parent), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    observed = []
+    try:
+        for component in path.parts[1:-1]:
+            budget.check()
+            before = os.stat(component, dir_fd=fd, follow_symlinks=False)
+            child = os.open(component, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            opened = os.fstat(child)
+            if (before.st_dev, before.st_ino, before.st_mode) != (opened.st_dev, opened.st_ino, opened.st_mode):
+                os.close(child)
+                raise RuntimeError("snapshot_race")
+            parent = parent / component
+            observed.append((parent, opened.st_dev, opened.st_ino, opened.st_mode))
+            os.close(fd); fd = child
+        result = regular(path.name, budget, content=True, dir_fd=fd)
+        for parent, device, inode, mode in observed:
+            now = parent.lstat()
+            if (now.st_dev, now.st_ino, now.st_mode) != (device, inode, mode):
+                raise RuntimeError("snapshot_race")
+        return result
+    finally:
+        os.close(fd)
+
+
+def validate_git_objects(repo, entries, budget, layout=None):
+    layout = layout or git_layout(repo, budget)
+    common = Path(layout["common_dir"]["path"])
+    prefix = ".git/common/objects" if layout["kind"] == "linked" else ".git/objects"
+    if entries.get(prefix, {}).get("kind") != "directory":
+        raise RuntimeError("unsupported_git_object_layout")
+    packs = {}
+    for path, entry in entries.items():
+        budget.check()
+        if not path.startswith(prefix + "/"):
+            continue
+        relative = path[len(prefix) + 1:]
+        if relative in ("info/alternates", "info/http-alternates"):
             raise RuntimeError("unsupported_git_control")
-    if (dot / "objects" / "info" / "alternates").exists():
-        raise RuntimeError("unsupported_git_control")
-    config_bytes = regular(dot / "config", Budget(), 65536, True)[1]
+        if relative in ("info", "pack") and entry["kind"] == "directory":
+            continue
+        if relative == "info/packs" and entry["kind"] == "file":
+            # Local dumb-transport advertisement is inert inspection metadata.
+            # No transport operation uses it; its bytes remain bound controls.
+            continue
+        if loose_object_entry(path, entry):
+            if entry["kind"] == "file":
+                identity, compressed = object_regular(common, relative, budget)
+                if identity != entry:
+                    raise RuntimeError("snapshot_race")
+                validate_loose_bytes(compressed, relative.replace("/", ""), budget)
+            continue
+        match = re.fullmatch(r"pack/pack-([0-9a-f]{40})\.(pack|idx|rev)", relative)
+        if match is None or entry["kind"] != "file":
+            raise RuntimeError("unsupported_git_object_layout")
+        pack_oid, kind = match.groups()
+        identity, data = object_regular(common, relative, budget)
+        if identity != entry:
+            raise RuntimeError("snapshot_race")
+        packs.setdefault(pack_oid, set()).add(kind)
+        if kind == "pack":
+            validate_pack_bytes(data, pack_oid, budget)
+        elif kind == "idx":
+            validate_pack_index(data, pack_oid)
+        elif (len(data) < 52 or data[:12] != b"RIDX\x00\x00\x00\x01\x00\x00\x00\x01" or
+              data[-40:-20].hex() != pack_oid or hashlib.sha1(data[:-20]).digest() != data[-20:]):
+            raise RuntimeError("unsupported_git_pack_reverse_index_format")
+    if any(not {"pack", "idx"} <= kinds for kinds in packs.values()):
+        raise RuntimeError("unsupported_git_object_layout")
+
+
+def validate_index(git_dir, budget):
+    identity, data = regular(git_dir / "index", budget, content=True)
+    if len(data) < 32 or data[:4] != b"DIRC":
+        raise RuntimeError("unsupported_git_index_format")
+    version, count = struct.unpack(">II", data[4:12])
+    if version != 2:
+        raise RuntimeError("unsupported_git_index_format")
+    if count > COUNT_LIMIT or hashlib.sha1(data[:-20]).digest() != data[-20:]:
+        raise RuntimeError("invalid_git_index")
+    offset, end = 12, len(data) - 20
+    for ignored in range(count):
+        budget.check()
+        start = offset
+        if offset + 62 > end:
+            raise RuntimeError("invalid_git_index")
+        flags = struct.unpack(">H", data[offset + 60:offset + 62])[0]
+        if flags & 0x4000:
+            raise RuntimeError("unsupported_git_index_format")
+        name_end = data.find(b"\0", offset + 62, end)
+        if name_end < 0:
+            raise RuntimeError("invalid_git_index")
+        offset = start + ((name_end + 1 - start + 7) // 8) * 8
+    while offset < end:
+        if offset + 8 > end:
+            raise RuntimeError("invalid_git_index")
+        signature = data[offset:offset + 4]
+        size = struct.unpack(">I", data[offset + 4:offset + 8])[0]
+        if signature not in (b"TREE", b"REUC", b"EOIE", b"IEOT"):
+            raise RuntimeError("unsupported_git_index_extension")
+        offset += 8 + size
+    if offset != end:
+        raise RuntimeError("invalid_git_index")
+    return identity
+
+
+def validate_git(repo, git, layout=None, budget=None, *, inspect=True):
+    budget = budget or Budget()
+    layout = layout or git_layout(repo, budget)
+    dot = Path(layout["common_dir"]["path"])
+    git_dir = Path(layout["git_dir"]["path"])
+    for forbidden in ("modules", "shallow", "config.worktree", "info/grafts", "refs/replace",
+                      "objects/info/http-alternates", "objects/info/alternates"):
+        if (dot / forbidden).exists() or (git_dir / forbidden).exists():
+            raise RuntimeError("unsupported_git_control")
+    if (dot / "reftable").exists():
+        raise RuntimeError("unsupported_git_ref_format")
+    config_bytes = regular(dot / "config", budget, 65536, True)[1]
     try:
         parser = configparser.RawConfigParser(strict=True)
         parser.read_string(config_bytes.decode("utf-8"))
         if parser.defaults():
             raise RuntimeError("unsupported_git_config")
+        if parser.has_section("extensions"):
+            if parser["extensions"].get("objectformat", "sha1") != "sha1":
+                raise RuntimeError("unsupported_git_object_format")
+            if parser["extensions"].get("refstorage", "files") != "files":
+                raise RuntimeError("unsupported_git_ref_format")
+            raise RuntimeError("unsupported_git_config")
         allowed_core = {"repositoryformatversion", "filemode", "bare", "logallrefupdates",
-                        "ignorecase", "precomposeunicode"}
+                        "ignorecase", "precomposeunicode", "hookspath"}
         for section in parser.sections():
             fields = set(parser[section])
             if section == "core":
@@ -366,7 +629,7 @@ def validate_git(repo, git):
                 if parser[section].get("repositoryformatversion") != "0" or parser[section].get("bare") != "false":
                     raise RuntimeError("unsupported_git_config")
                 if any(value not in ("true", "false") for key, value in parser[section].items()
-                       if key not in ("repositoryformatversion", "bare")):
+                       if key not in ("repositoryformatversion", "bare", "hookspath")):
                     raise RuntimeError("unsupported_git_config")
             elif section.startswith('remote "') and section.endswith('"'):
                 if fields - {"url", "fetch"}:
@@ -376,17 +639,33 @@ def validate_git(repo, git):
                     raise RuntimeError("unsupported_git_config")
             else:
                 raise RuntimeError("unsupported_git_config")
+        hooks_path = parser["core"].get("hookspath")
+        if hooks_path is None:
+            hooks = dot / "hooks"
+        else:
+            # No shell, tilde or Git path interpolation. Canonical physical paths
+            # are the supported explicit hooks policy.
+            # RawConfigParser does not implement Git quoting/escape/comment rules.
+            # Fail closed for those spellings instead of binding a different path.
+            if (not hooks_path or hooks_path.startswith("~") or "\0" in hooks_path or
+                    any(c in hooks_path for c in ('"', "'", "\\", "#", ";"))):
+                raise RuntimeError("unsupported_git_config")
+            hooks = Path(hooks_path)
+            hooks = hooks if hooks.is_absolute() else repo / hooks
+            hooks = Path(os.path.normpath(str(hooks)))
+        layout["hooks_root"] = directory_identity(hooks, optional=True)
     except (ValueError, UnicodeError, configparser.Error):
         raise RuntimeError("unsupported_git_config") from None
     if (repo / ".gitmodules").exists():
         raise RuntimeError("submodules_unsupported")
-    hooks = dot / "hooks"
-    if hooks.exists():
-        with os.scandir(hooks) as scan:
-            if any(not item.name.endswith(".sample") for item in scan):
-                raise RuntimeError("active_hooks_unsupported")
+    validate_index(git_dir, budget)
+    if not inspect:
+        return
+    # These commands have no hook or diff driver dispatch. The sanitized runner
+    # does not override hooksPath; presence/content of hooks remain controls.
+    runner.git_read(git, repo, ("fsck", "--strict", "--no-reflogs"))
     head = runner.git_read(git, repo, ("rev-parse", "--verify", "HEAD"))
-    if not head.strip() or len(head.strip()) != 40:
+    if re.fullmatch(rb"[0-9a-f]{40}\n", head) is None:
         raise RuntimeError("existing_head_required")
     stages = runner.git_read(git, repo, ("ls-files", "--stage", "-z"))
     if any(line.startswith(b"160000 ") for line in stages.split(b"\0")):
@@ -408,9 +687,21 @@ def validate_git(repo, git):
             raise RuntimeError("unsupported_index_path")
         index_entries.setdefault(name, []).append(hashlib.sha256(metadata).hexdigest())
     refs = runner.git_read(git, repo, ("show-ref", "--head", "-d"))
+    head_bytes = regular(git_dir / "HEAD", budget, 65536, True)[1]
+    if head_bytes.startswith(b"ref: "):
+        try:
+            head_ref = head_bytes[5:].strip().decode("ascii")
+        except UnicodeError:
+            raise RuntimeError("unsupported_git_ref_format") from None
+        if (not head_ref.startswith("refs/heads/") or len(head_ref)>1024 or
+                any(part in ("", ".", "..") for part in head_ref.split("/")) or
+                any(ord(c)<33 or c in "\\~^:?*[" for c in head_ref)):
+            raise RuntimeError("unsupported_git_ref_format")
+    else:
+        head_ref = None
     return {"head": head.strip().decode("ascii"), "stages": hashlib.sha256(stages).hexdigest(),
             "flags": hashlib.sha256(flags).hexdigest(), "refs": hashlib.sha256(refs).hexdigest(),
-            "index_entries": index_entries}
+            "index_entries": index_entries, "git_layout": layout, "head_ref":head_ref}
 
 
 def source_bindings(repo, sources, entries, index_entries, budget):
@@ -458,18 +749,37 @@ def source_bindings(repo, sources, entries, index_entries, budget):
     return bindings
 
 
-def capture(repo, contract_path, sources=(), *, program_roots=("taskclosurekit", "tests")):
-    budget = Budget()
+def capture(repo, contract_path, sources=(), *, program_roots=("taskclosurekit", "tests"), capture_budget=None, immutable_entries=None):
+    if capture_budget:
+        from ..integration.budgets import validate_budget
+        validate_budget(capture_budget)
+    budget = Budget(capture_budget)
     repo = safe_path(repo)
     git = git_binary()
-    entries = inventory(repo, budget)
+    # Classify the actual root spelling before lookup on case-insensitive hosts.
+    with os.scandir(repo) as scan:
+        root_names = {}
+        for item in scan:
+            budget.count += 1; budget.check()
+            root_names[item.name] = None
+    validate_git_directory_names(root_names)
+    layout = git_layout(repo, budget)
+    validate_git(repo, git, layout, budget, inspect=False)
+    initial_layout = json.loads(json.dumps(layout))
+    entries = metadata_inventory(repo, layout, budget,immutable_entries)
     validate_git_directory_names(entries)
-    validate_git_objects(repo, entries, budget)
-    controls = validate_git(repo, git)
+    validate_git_objects(repo, entries, budget, layout)
+    controls = validate_git(repo, git, layout, budget)
+    if layout != initial_layout:
+        raise RuntimeError("snapshot_race")
     bindings = source_bindings(repo, sources, entries, controls["index_entries"], budget)
     # Inventory contains index, refs, config, hooks, ignore/attributes and objects.
     # Metadata read by Git must match the same complete inventory afterwards.
-    if entries != inventory(repo, budget):
+    if entries != metadata_inventory(repo, layout, budget,immutable_entries):
+        raise RuntimeError("snapshot_race")
+    current_layout = git_layout(repo, budget)
+    current_layout["hooks_root"] = directory_identity(Path(layout["hooks_root"]["path"]), optional=True)
+    if current_layout != layout:
         raise RuntimeError("snapshot_race")
     program_root = Path(__file__).resolve().parents[2]
     program = {}
@@ -488,4 +798,6 @@ def capture(repo, contract_path, sources=(), *, program_roots=("taskclosurekit",
                  "python_version": list(sys.version_info[:3])}
     snapshot = {"entries": entries, "controls": controls, "source_bindings": bindings, "execution": execution,
                 "contract_input": input_identity}
+    if capture_budget:
+        snapshot["capture_budget"]=capture_budget
     return snapshot

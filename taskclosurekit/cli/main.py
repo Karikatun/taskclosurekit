@@ -18,7 +18,7 @@ def main(argv=None):
     commands=parser.add_subparsers(dest="operation",required=True,parser_class=Parser)
     task=commands.add_parser("task"); task.add_argument("--json",action="store_true")
     task_commands=task.add_subparsers(dest="task_operation",required=True,parser_class=Parser)
-    create=task_commands.add_parser("create");create.add_argument("input");create.add_argument("--preset-config");create.add_argument("--json",action="store_true")
+    create=task_commands.add_parser("create");create.add_argument("input");create.add_argument("--preset-config");create.add_argument("--integration-config");create.add_argument("--json",action="store_true")
     for name in ("authorize","baseline","evaluate","close","status","resume"):
         sub=commands.add_parser(name);sub.add_argument("--json",action="store_true")
         if name=="status":sub.add_argument("--next",action="store_true")
@@ -29,7 +29,7 @@ def main(argv=None):
     try:
         args=parser.parse_args(argv);operation=args.operation
         if operation=="task":
-            operation="task.create";result=application.create(args.store,args.input,preset_config=args.preset_config)
+            operation="task.create";result=application.create(args.store,args.input,preset_config=args.preset_config,integration_config=args.integration_config)
         else:
             if operation=="review" and (args.human==bool(args.input)):
                 raise InvalidArguments()
@@ -43,8 +43,9 @@ def main(argv=None):
         reason=str(error)
         if not reason or len(reason)>96 or any(c not in "abcdefghijklmnopqrstuvwxyz_0123456789" for c in reason):
             reason="invalid_state_or_input"
-        environment=reason in ("store_busy","private_store_required","snapshot_limit","snapshot_race","file_limit","unsupported_resource_limits","git_snapshot_incomplete","runtime_identity_limit")
-        result=application.envelope(operation,status="environment_error" if environment else "invalid_input",reasons=(reason,));code=3 if environment else 2
+        environment=reason in ("store_busy","private_store_required","snapshot_limit","snapshot_race","file_limit","unsupported_resource_limits","git_snapshot_incomplete","runtime_identity_limit","immutable_dependency_proof_unavailable","immutable_dependency_guard_unavailable","immutable_root_guard_unavailable","immutable_root_guard_invalidated","immutable_dependency_provenance_changed","immutable_root_proof_unknown","immutable_root_binding_mismatch")
+        result=application.envelope(operation,status="environment_error" if environment else "invalid_input",reasons=(reason,),
+            **({"state":"BLOCKED","decision":"NOT_CLAIMABLE","freshness":[{"id":"current","state":"UNKNOWN"}],"next_action":"inspect_environment"} if environment else {}));code=3 if environment else 2
     except (ValueError,TypeError,KeyError,OverflowError,RecursionError):
         result=application.envelope(operation,status="invalid_input",reasons=("invalid_state_or_input",));code=2
     except (OSError,subprocess.SubprocessError):

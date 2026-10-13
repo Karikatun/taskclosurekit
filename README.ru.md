@@ -65,9 +65,9 @@ create → authorize → baseline → implement and stage → check
 Для тестов или сборки используйте проверенную [конфигурацию пресетов](examples/presets-engineering-v21.json).
 См. [инженерный контракт](examples/contract-engineering-v21.json) и [справочник CLI](docs/CLI.md#real-engineering-checks).
 
-Целевой репозиторий должен иметь исходный commit и обычный каталог `.git` с отдельными SHA-1 objects.
-Packed objects, alternates и linked worktrees не поддерживаются.
-Поэтому обычный клонированный репозиторий может оказаться неподдерживаемым.
+Целевой репозиторий должен иметь исходный commit, SHA-1 objects, files refs и полный index v2.
+Обычный clone с packs и linked worktree поддержан в пределах bounded inspection.
+Alternates, submodules и неподдержанные formats дают явный blocker.
 Другие ограничения Git описаны в [границах безопасности](docs/SAFETY_BOUNDARIES.md#git).
 
 Используйте абсолютные физические пути для контракта и store.
@@ -143,7 +143,7 @@ npx taskclosurekit --store "$TASK_STORE" status --next --json
 - Обязательная независимость reviewer блокирует claim без доверенного доказательства. Импортированные review и assertions сохраняют agent-attested trust.
 - Локальные HMAC-записи выявляют поддержанные нарушения целостности. Процесс с равными правами на хосте может заменить инструмент, ключ и журнал вместе.
 - Исполнение проверок ограничено по времени, объёму вывода и POSIX resource limits. Ограничение адресного пространства действует только на Linux.
-- Инструмент отбрасывает сырой вывод проверок. Журнал всё равно содержит метаданные задачи и снимки.
+- Строгие presets отбрасывают сырой вывод; policy v2 допускает bounded redacted diagnostics. Журнал содержит метаданные задачи и снимки.
 
 Не помещайте credentials, исходные `.env` или персональные данные во входы задачи или доказательства.
 У инструмента нет сетевого CI adapter, SDK, completion hook или deployment service.
@@ -193,3 +193,8 @@ python3 -B -m unittest discover -s tests -v
 
 В репозитории нет файла `LICENSE` или объявленной лицензии на программное обеспечение.
 В npm-пакете указано `UNLICENSED`; это значение не предоставляет лицензию на ПО.
+
+
+## Контракт интеграции
+
+[Контракт интеграции](docs/INTEGRATION.md)

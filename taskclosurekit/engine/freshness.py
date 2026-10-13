@@ -3,6 +3,9 @@ def freshness(evidence, contract, current):
         return "STALE_AUTHORITY"
     if evidence.snapshot.execution != current.execution:
         return "STALE_ENVIRONMENT"
-    if evidence.snapshot.repository != current.repository or evidence.snapshot.digest != current.digest:
+    # Repository, authority and execution cover every material check input.
+    # The composite digest also binds staged review content in content-stage mode;
+    # equivalent staging invalidates review without rerunning unchanged tests.
+    if evidence.snapshot.repository != current.repository:
         return "STALE_INPUT"
     return "CURRENT"

@@ -4,6 +4,8 @@
 
 ## Форматы
 
+Локальное расширение добавляет `taskclosurekit/presets/v2`, `taskclosurekit/execution-policy/v1`, `taskclosurekit/integration/v1`, additive `integration/v2` с finite capture budgets/protected host intervals и `taskclosurekit/adapters/v1`; task/result schemas остаются v2. Provider negotiation требует новую capability `repository.immutable-root-guard` и exact typed `ProtectedImmutableRoot`; прежний instantaneous proof без guard не даёт current reuse. Historical descriptors остаются данными, а runtime guard не сериализуется и не восстанавливается из JSON. Новые поля результата additive, а новые input/journal variants проверяются exact-field validation отдельно от legacy variants. Close consumption audit имеет STARTED/CONSUMED/REFUSED variants; delegated CLAIM_CLOSED требует STARTED + CONSUMED + `consume_audit: true` без unaudited legacy исключения. Реальная manual operator history читается отдельно и не переписывается. Source package metadata всё ещё 2.1.1; опубликованный registry artifact не обновлялся этой задачей.
+
 Поддержан только текущий task contract и current domain events (`CONTRACT_CREATED` и последующие допустимые события). Числовой schema-1 task contract и прежний lifecycle `DRAFT` journal не принимаются. Отдельного предыдущего namespace, CLI alias или автоматического importer нет.
 
 Числовое `schema: 1` во внешнем HMAC event envelope — версия формата хранения, а не версия task contract. Она по-прежнему используется текущим journal. HMAC integrity и обязательный semantic replay проверяются отдельно; формат envelope не делает неподдержанный payload допустимым.
@@ -18,6 +20,8 @@ Historical PASS и recorded closure остаются утверждениями 
 
 ## Конфигурация и машинный consumer
 
+Без integration config действует conservative fallback. Content-stage mode переносит неизменившиеся check inputs между precommit/staged/commit, сохраняя index binding review и существенные controls; historical receipts не переписываются. Нет автоматической миграции keys/events, rebaseline, переавторизации или освежения review. Новые variants могут не приниматься старой программой; используйте ту версию программы и внешние inputs, которыми создан журнал. Neutral examples переименованы: `web-app-template-v21.json` → `contract-ui-engineering-v21.json`, `presets-web-app-template-v21.json` → `presets-ui-engineering-v21.json`.
+
 Project config фиксируется при CREATE; config/dispatcher drift означает STALE_AUTHORITY и новый task, runtime drift — STALE_ENVIRONMENT, ordinary input drift — STALE_INPUT. Ни confirmation, ни check не освежают изменённую authority молча. Неизвестный/неполный replay fail-closed. Поддержанный dispatch grammar и resource limits описаны в [контракте](V2_CONTRACT.md) и [границах](SAFETY_BOUNDARIES.md).
 
 Consumer сначала читает `operational.status`, затем `decision`, `reasons`, freshness и next action. Exit codes: 0 — успешно без blocked claim; 1 — policy blocker; 2 — invalid input/state; 3 — environment/internal failure; 4 — stale/unknown state. JSON с operational status `ok` может содержать NOT_CLAIMABLE. Consumer не закрывает task автоматически и не расширяет scope по assertion.
@@ -31,3 +35,8 @@ Launcher/bootstrap включены в существующий program fingerpr
 Byte-identical payload с теми же relative entries, bytes, sizes и modes можно переместить между cache paths: program identity не включает absolute installation root. Это локально проверено для нового payload; сохранение Python executable path/bytes/version, Git, repository и external inputs остаётся обязательным. Изменения launcher, bootstrap, core или tests блокируют прежнее evidence. npm pack может нормализовать modes; совпадение version не доказывает совпадение payload.
 
 Node/npm и package.json не входят в runtime binding. Cache relocation не подтверждает npm provenance, registry publisher, подпись, качество либо совместимость другой runtime/platform. Матрица ограничена macOS / Python 3.9.6 / Node 22.23.1 / npm 10.9.8. Лицензия не назначена; `UNLICENSED` metadata не выдаёт лицензионных прав.
+
+
+## Контракт интеграции
+
+[Контракт интеграции](INTEGRATION.md)

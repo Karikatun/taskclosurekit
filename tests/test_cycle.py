@@ -126,15 +126,12 @@ class CycleTests(unittest.TestCase):
         self.assertEqual((code, result.get("reasons", [None])[0]), (2, "unsupported_git_object_layout"), result)
         self.assertEqual(self.store_bytes(), before)
 
-    def test_git_packed_repository_rejected_before_baseline(self):
-        # Git produces an ordinary healthy pack; no malformed objects or payloads.
+    def test_git_packed_repository_baselines_and_checks(self):
         self.git("repack", "-a")
         self.assertTrue(list((self.repo / ".git" / "objects" / "pack").glob("*.pack")))
-        self.assertEqual(self.result("task", "create", str(self.contract))[0], 0)
-        before = self.store_bytes()
-        code, result = self.result("baseline")
-        self.assertEqual((code, result.get("reasons", [None])[0]), (2, "unsupported_git_object_layout"), result)
-        self.assertEqual(self.store_bytes(), before)
+        self.git("fsck", "--strict")
+        self.start()
+        self.assertEqual(self.result("check")[1]["state"], "EVIDENCED")
 
     def healthy_blob(self, body):
         result = subprocess.run([GIT, "hash-object", "-w", "--stdin"], input=body,
@@ -1096,16 +1093,18 @@ class CycleTests(unittest.TestCase):
         self.assertEqual(self.result("task", "create", str(self.contract))[0], 0)
         self.rejected("baseline", "git_snapshot_incomplete")
 
-    def test_active_hooks_unsupported(self):
+    def test_active_hooks_are_inert_inspection_controls(self):
         (self.repo / ".git" / "hooks").mkdir()
         (self.repo / ".git" / "hooks" / "pre-commit").write_text("synthetic non-executable data\n")
-        self.assertEqual(self.result("task", "create", str(self.contract))[0], 0)
-        self.rejected("baseline", "active_hooks_unsupported")
+        self.start()
+        self.assertEqual(self.result("check")[1]["state"], "EVIDENCED")
 
     def test_index_skip_flag_unsupported(self):
         self.git("update-index", "--skip-worktree", "sample.txt")
         self.assertEqual(self.result("task", "create", str(self.contract))[0], 0)
-        self.rejected("baseline", "unsupported_index_flags")
+        # Git emits index v3 for extended skip-worktree flags; this layout is
+        # rejected before a Git consumer rather than interpreted as index v2.
+        self.rejected("baseline", "unsupported_git_index_format")
 
 
 

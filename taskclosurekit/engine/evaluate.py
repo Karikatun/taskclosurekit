@@ -51,10 +51,12 @@ def evaluate(contract, current, evidence, review=None, *, authorized=False, base
             reasons.append("required_evidence_failed" if any(x and x.result=="FAIL" for x in refs) else
                            "stale_evidence" if any(x and freshness(x,contract,current)!="CURRENT" for x in refs) else
                            "missing_required_evidence")
-    independent = independence(contract.review_independence=="required")
+    host_verified = bool(review and valid_source(review.source,"host_verified") and review.independence=="PROVEN")
+    independent = "PROVEN" if host_verified and contract.review_independence=="required" else independence(contract.review_independence=="required")
     review_current = bool(review and review.contract_digest==contract.digest and review.snapshot_digest==current.digest and
                           review.evidence_set==evidence_set and review.verdict=="approve" and
-                          valid_source(review.source, "human_confirmed") and review.independence==independent)
+                          (valid_source(review.source, "human_confirmed") or host_verified) and
+                          (review.independence==independent or (host_verified and independent=="NOT_REQUIRED")))
     if contract.review_required and not review_current:
         reasons.append("stale_review" if review and (review.snapshot_digest!=current.digest or review.evidence_set!=evidence_set or review.contract_digest!=contract.digest) else "missing_trusted_review")
     if contract.review_independence=="required" and independent!="PROVEN":

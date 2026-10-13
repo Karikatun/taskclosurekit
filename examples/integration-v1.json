@@ -1,0 +1,14 @@
+{
+  "schema": "taskclosurekit/integration/v1",
+  "stage_equivalence": "content",
+  "roots": [
+    {
+      "path": ".build",
+      "type": "generated",
+      "acceptance": "exclude",
+      "rationale": "Сборочные outputs не читаются настроенными source checks.",
+      "dependency_provenance": null
+    }
+  ],
+  "coverage": "bounded-full-rehash"
+}

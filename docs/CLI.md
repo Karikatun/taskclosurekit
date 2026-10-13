@@ -28,7 +28,7 @@ Python получает inherited stdin/stdout/stderr в отдельной sess
 
 Демонстрационный [контракт](../examples/contract-v2.json) относится к `/tmp/taskclosurekit-demo`, пишет только `src/foo.py` и связывает `README.md` как неизменяемый источник. Чтобы использовать его, подготовьте небольшой disposable Git repository с нейтральным `README.md`, `src/foo.py` и исходным commit, затем сохраните контракт вне этого repository, например `/tmp/taskclosurekit-contract.json`. Для реальной задачи замените task id, repository и scopes в новом contract file. Не используйте эти пути как готовый production store.
 
-Поддержан обычный `.git` с SHA-1 loose objects; packs, alternates, linked worktrees, unsupported Git controls и неполные snapshots fail-closed. Все [limits/path/source/Git rules](SAFETY_BOUNDARIES.md) сохраняются. Sources/read/write — точные относительные файлы или поддеревья, globs не поддерживаются. Read scope декларативен и не является host sandbox.
+Поддержаны ordinary `.git`, loose/packed SHA-1 objects и linked worktrees с проверенными physical backlinks в пределах bounded inspection. Alternates, unsupported Git formats/controls и неполные snapshots fail-closed. Точные поддержанные formats и [limits/path/source/Git rules](SAFETY_BOUNDARIES.md) сохраняются. Sources/read/write — точные относительные файлы или поддеревья, globs не поддерживаются. Read scope декларативен и не является host sandbox.
 
 ## Основной цикл
 
@@ -74,6 +74,9 @@ python3 -m taskclosurekit --store /tmp/taskclosurekit-store status --next --json
 | `authority` | `{class, source, identity, confirmed, read, write, presets, binding}`; semantic operator authority |
 | `review` | `{verdict, trust, source, identity, independence, freshness}` или null; свойства разделены |
 | `handoff` | `{task, current_state, authority, current_evidence, stale_evidence, review, claim_status, blockers, next_permitted_action}` |
+| `capabilities` | Versioned `taskclosurekit/adapters/v1`, поддержанные capabilities и явные ограничения |
+| `result_identity` | `precommit`, `staged-review`, `committed` либо `unknown`, SHA/snapshot и отдельные local/remote/CI/deployment assertions |
+| `authority_attempt` | Durable one-time close consumption status/binding/nonce/provider и required recovery, когда попытка прервана или отказана |
 
 `operational.status: "ok"` означает успешную обработку операции, включая вычисленное блокирующее решение. Оно не означает CLAIMABLE. `NOT_EVALUATED` у create/authorize/baseline не является одобрением claim. Unknown/stale evidence отражается freshness/reasons или отказом capture, а не общей зелёной operational отметкой.
 
@@ -150,12 +153,19 @@ IDs должны входить в contract execution authority и external trus
 
 Tests/typecheck/build PASS независимо удовлетворяют выбранные criteria; перед close всё равно требуется current exact review, сохранённая authority и permitted scope. Stale review после rerun требует нового review. `status --next`/`resume` показывают task, current state, authority, current/stale evidence, review, claim blockers и next action без transcript. Внешний workflow, agent host, orchestrator или automation читает эти fields как обычный consumer.
 
-### Conservative output invalidation
+### Conservative output invalidation — строгий fallback
 
 Snapshot включает разрешённые generated outputs; они не исключаются автоматически. Если build впервые создаёт `.build/foo.o` после tests, предыдущий tests PASS может стать STALE_INPUT даже при неизменном source. Тогда tests нужно повторить на состоянии с build output; byte-identical повторный output не меняет snapshot. При дальнейших writes возможно снова потребуется recheck. Это намеренная conservative applicability, не вычисление точного dependency graph. Claim разрешён лишь когда все required receipts и review относятся к текущим bindings.
+
+В локальном расширении `task create INPUT --preset-config ABS --integration-config ABS --json` фиксирует отдельный root/stage policy. [Нейтральный пример](../examples/integration-v1.json) не исключает bytes из scope inspection; только approved generated acceptance outputs не инвалидируют unrelated checks. `presets/v2` задаёт отдельно доверенные finite limits и PATH. Подробные schemas, host provider ports и отсутствие production CI/identity providers описаны в [контракте интеграции](INTEGRATION.md). CLI не получает provider module/path/token из JSON и сохраняет отдельный manual confirmation.
 
 ### Launcher validation и cleanup
 
 При CREATE argv проверяется по [ограниченному dispatch grammar](V2_CONTRACT.md#поддержанный-dispatch-grammar): Python flags/operands, explicit local module/package bindings, Node loaders и Bun/package dispatch. Unknown/ambiguous flags, missing launch targets, bare Node loader packages и неподдержанные shell/env/npx launchers отклоняются как invalid input с exit **2**. Local `-m` target не должен допускать создание competing package `__init__.py` через write scope; `-I`/`-P` + `-m` отклоняются. Named package `run` требует string `scripts[name]`, trailing script args — explicit `--`; `--cwd` поддержан только Bun. Не заменяйте отказ новым runtime field во входном contract: definitions принадлежат отдельно подтверждаемой config.
 
 Runner очищает собственную process group и при успешном завершении leader до post-run snapshot. Это не sandbox и не гарантия против процессов, покинувших группу.
+
+
+## Контракт интеграции
+
+[Контракт интеграции](INTEGRATION.md)

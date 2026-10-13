@@ -22,11 +22,27 @@ def hash_string(value):
 
 def valid_snapshot(value, contract=None):
     snap = value["snapshot"]
-    fields(snap, ("entries", "controls", "source_bindings", "execution", "contract_input"))
-    fields(snap["controls"], ("head", "stages", "flags", "refs", "index_entries"))
+    fields(snap, ("entries", "controls", "source_bindings", "execution", "contract_input", *(("capture_budget",) if "capture_budget" in snap else ())))
+    limits=None
+    if "capture_budget" in snap:
+        from ..integration.budgets import validate_budget
+        limits=validate_budget(snap["capture_budget"])
+    control_fields = ("head", "stages", "flags", "refs", "index_entries")
+    if "git_layout" in snap["controls"]:
+        fields(snap["controls"], (*control_fields, "git_layout", *(("head_ref",) if "head_ref" in snap["controls"] else ())))
+        valid_git_layout(snap["controls"]["git_layout"], snap["entries"])
+    else:
+        # Historical strict snapshots retain their original shape. They are
+        # never upgraded or re-bound to the new inspection implementation.
+        fields(snap["controls"], control_fields)
     fields(snap["execution"], ("preset", "argv", "cwd", "env", "timeout", "output_limit", "git", "program", "resources",
                                "git_path", "python", "python_path", "python_version"))
     controls = snap["controls"]
+    if "head_ref" in controls and controls["head_ref"] is not None:
+        ref=controls["head_ref"]
+        if (type(ref) is not str or not ref.startswith("refs/heads/") or len(ref)>1024 or
+                any(part in ("", ".", "..") for part in ref.split("/")) or any(ord(c)<33 or c in "\\~^:?*[" for c in ref)):
+            raise RuntimeError("invalid_git_identity")
     if not isinstance(controls["head"], str) or not re.fullmatch(r"[0-9a-f]{40}", controls["head"]):
         raise RuntimeError("invalid_git_identity")
     if any(not hash_string(controls[name]) for name in ("stages", "flags", "refs")):
@@ -38,6 +54,9 @@ def valid_snapshot(value, contract=None):
         if not isinstance(stages, list) or not 1 <= len(stages) <= 3 or any(not hash_string(stage) for stage in stages):
             raise RuntimeError("invalid_index_identity")
     execution = snap["execution"]
+    if ("git_layout" in controls and
+            controls["git_layout"]["worktree"]["path"] != execution["cwd"]):
+        raise RuntimeError("invalid_git_layout")
     if (execution["preset"] != runner.PRESET or execution["argv"] != list(runner.CHECK_ARGS) or
             execution["env"] != runner.environment() or execution["timeout"] != runner.TIMEOUT or
             execution["output_limit"] != runner.OUTPUT_LIMIT or execution["resources"] != runner.resource_profile()):
@@ -57,16 +76,16 @@ def valid_snapshot(value, contract=None):
     for name in ("cwd", "git_path", "python_path"):
         if not isinstance(execution[name], str) or not execution[name].startswith("/"):
             raise RuntimeError("invalid_execution_path")
-    if not isinstance(snap["entries"], dict) or len(snap["entries"]) > snapshot.COUNT_LIMIT:
+    if not isinstance(snap["entries"], dict) or len(snap["entries"]) > (limits["entries"] if limits else snapshot.COUNT_LIMIT):
         raise RuntimeError("invalid_snapshot_entries")
     for entries in (snap["entries"], snap["execution"]["program"]):
-        if not isinstance(entries, dict) or len(entries) > snapshot.COUNT_LIMIT:
+        if not isinstance(entries, dict) or len(entries) > (limits["entries"] if limits else snapshot.COUNT_LIMIT):
             raise RuntimeError("invalid_snapshot_entries")
         for path, entry in entries.items():
             # Git paths are inventory data; they may contain .git but no traversal.
             if not isinstance(path, str) or path.startswith("/") or any(part in ("", ".", "..") for part in path.split("/")):
                 raise RuntimeError("invalid_snapshot_path")
-            valid_entry(entry)
+            valid_entry(entry,limits["file_bytes"] if limits else snapshot.FILE_LIMIT)
     snapshot.validate_git_directory_names(snap["entries"])
     if contract is not None:
         valid_sources(contract, snap)
@@ -76,6 +95,43 @@ def valid_snapshot(value, contract=None):
     if not hash_string(value["digest"]) or snapshot.digest(snap) != value["digest"]:
         raise RuntimeError("snapshot_binding_mismatch")
 
+
+
+def valid_git_layout(layout, entries):
+    fields(layout, ("schema", "kind", "worktree", "git_dir", "common_dir", "link_bindings",
+                    "object_format", "index_format", "hooks_root"))
+    if (layout["schema"] != "git-layout/v1" or layout["kind"] not in ("ordinary", "linked") or
+            layout["object_format"] != "sha1" or type(layout["index_format"]) is not int or
+            layout["index_format"] != 2):
+        raise RuntimeError("invalid_git_layout")
+    for name in ("worktree", "git_dir", "common_dir", "hooks_root"):
+        root = layout[name]
+        fields(root, ("path", "exists", "device", "inode"))
+        path = root["path"]
+        if (not isinstance(path, str) or not path.startswith("/") or
+                str(Path(path)) != path or any(part in (".", "..") for part in path.split("/")) or
+                type(root["exists"]) is not bool):
+            raise RuntimeError("invalid_git_layout")
+        if root["exists"]:
+            if any(type(root[key]) is not int or root[key] < 0 for key in ("device", "inode")):
+                raise RuntimeError("invalid_git_layout")
+        elif name != "hooks_root" or root["device"] is not None or root["inode"] is not None:
+            raise RuntimeError("invalid_git_layout")
+    links = layout["link_bindings"]
+    fields(links, ("gitfile", "commondir", "backlink"))
+    worktree, git_dir, common = (Path(layout[name]["path"]) for name in ("worktree", "git_dir", "common_dir"))
+    if layout["kind"] == "ordinary":
+        if (git_dir != worktree / ".git" or common != git_dir or
+                layout["git_dir"] != layout["common_dir"] or
+                any(value is not None for value in links.values())):
+            raise RuntimeError("invalid_git_layout")
+    else:
+        if git_dir.parent != common / "worktrees":
+            raise RuntimeError("invalid_git_layout")
+        for name, path in (("gitfile", ".git"), ("commondir", ".git/commondir"), ("backlink", ".git/gitdir")):
+            valid_entry(links[name])
+            if links[name]["kind"] != "file" or entries.get(path) != links[name]:
+                raise RuntimeError("invalid_git_layout")
 
 
 def valid_sources(contract, snap):
@@ -98,12 +154,12 @@ def valid_sources(contract, snap):
 
 
 
-def valid_entry(entry):
+def valid_entry(entry, file_limit=snapshot.FILE_LIMIT):
     if not isinstance(entry, dict):
         raise RuntimeError("invalid_snapshot_entry")
     if entry.get("kind") == "file":
         fields(entry, ("kind", "mode", "size", "sha256"))
-        if type(entry["size"]) is not int or not 0 <= entry["size"] <= snapshot.FILE_LIMIT or not hash_string(entry["sha256"]):
+        if type(entry["size"]) is not int or not 0 <= entry["size"] <= file_limit or not hash_string(entry["sha256"]):
             raise RuntimeError("invalid_snapshot_entry")
     elif entry.get("kind") == "directory":
         fields(entry, ("kind", "mode"))
@@ -133,7 +189,9 @@ def permitted_change(contract, baseline, current):
         if previous != current:
             raise RuntimeError("review_mode_drift")
         return
-    if previous["controls"]["head"] != current["controls"]["head"] or previous["controls"]["refs"] != current["controls"]["refs"]:
+    if (previous["controls"].get("git_layout") != current["controls"].get("git_layout") or
+            previous["controls"]["head"] != current["controls"]["head"] or
+            previous["controls"]["refs"] != current["controls"]["refs"]):
         raise RuntimeError("git_authority_changed")
     old_index, new_index = previous["controls"]["index_entries"], current["controls"]["index_entries"]
     for path in set(old_index) | set(new_index):

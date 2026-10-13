@@ -28,13 +28,17 @@ Criteria имеют уникальные id; `evidence` содержит ров�
 
 ## Trusted preset
 
+Ниже описан strict `presets/v1`. Additive `presets/v2` хранит отдельно frozen execution policy, explicit toolchain PATH и ограниченный dispatcher metadata projection. [Контракт интеграции](INTEGRATION.md) описывает boundaries и [пример v2](../examples/presets-engineering-v2.json). Unknown config fields не расширяют authority.
+
+External integration/v2 capture policy согласует конечный writer/capture file budget и позволяет initial material binding больших inputs/outputs. `ImmutableRootProvider` — отдельная typed host boundary с exact root/manifest/provenance/physical/provider binding и complete authenticated protected-interval guard до required append. Instantaneous proof без этой capability не разрешает reuse. Persisted descriptor не устанавливает доверие; production provider отсутствует. [Пример](../examples/integration-v2.json) показывает finite budgets без заявления host proof.
+
 Registry сохраняет builtin `git-index-whitespace-v1` и принимает внешнюю project configuration только при `task create INPUT --preset-config ABS`. Config физически вне repository/store, contract не задаёт его определения. Формат strict JSON — `taskclosurekit/presets/v1`, объект с `schema` и массивом `presets`.
 
 Каждое определение задаёт `id`, абсолютный canonical regular `executable`, `argv`, `cwd_rule: contract-repository`, literal `environment_allowlist`, `timeout` (не более 5 секунд), `output_limit` (не более 65536 bytes), `permitted_writes`, `relevant_inputs` с категориями `source`, `tests`, `manifests`, `lockfiles`, `config`, а также `authority_inputs` и абсолютные `runtime_inputs`. Environment names ограничены `PATH`, `LC_ALL`, `LANG`, `PYTHONDONTWRITEBYTECODE`, `CI`, `NODE_NO_WARNINGS`, `TMPDIR`; объявленный PATH равен `/usr/bin:/bin`, TMPDIR — относительный путь внутри permitted writes. Executable/runtime inputs физически вне repository/store. Resource identity имеет отдельные bounds: 384 MiB на файл, 1 GiB суммарно, 32 файла и 10 секунд capture; repository limits не увеличены. Это policy execution definition, не plugin framework.
 
 Relevant input declaration непустая; relevant/authority repository paths входят в read scope. Permitted writes входят в contract write scope и не пересекаются с relevant/authority inputs. Authority inputs не могут входить в task write scope. Прямые repository launchers и package `run` dispatcher manifest должны быть объявлены authority inputs; indirect imports и полный command/dependency graph остаются ответственностью trusted configuration, автоматического discovery нет. Resource-file hashes не удостоверяют всю установку compiler/SDK или supply-chain provenance. Config identity, definitions digest и authority input bindings фиксируются при CREATE. Authorize подтверждает authority с registry binding. Изменение config/dispatcher не может self-authorize command внутри transaction: оно означает STALE_AUTHORITY и требует нового task. Executable/runtime drift означает STALE_ENVIRONMENT. Изменение обычных объявленных inputs означает STALE_INPUT; unknown applicability блокирует required criteria.
 
-Runner v2 — bounded adapter без shell; используются фиксированные argv/environment, timeout/output/resource limits и snapshot до/после. Разрешённые check outputs проверяются по объявленным writes и contract scope (file bound 8 MiB), без объявления OS sandbox. Builtin остаётся staged whitespace check:
+Runner v2 — bounded adapter без shell; используются фиксированные argv/environment, timeout/output/resource limits и snapshot до/после. Разрешённые check outputs проверяются по объявленным writes и contract scope: strict fallback/presets/v1 имеет file bound 8 MiB, а отдельно доверенные presets/v2 + integration/v2 согласуют configured finite writer/capture bounds. OS sandbox не заявляется. Builtin остаётся staged whitespace check:
 
 ```text
 git --no-pager diff --cached --check --no-ext-diff --no-textconv HEAD --
@@ -126,3 +130,8 @@ CREATE проверяет явные поддержанные формы launche
 Node поддерживает фиксированный список options; preload/import/loader принимает только явный `./file` или canonical absolute file с binding, без bare package specifiers. Loader options проверяются и после inline eval. Bun test/build поддерживают ограниченные flags и `--cwd`; loader/config/plugin targets связываются явно. Existing implicit `bunfig.toml` должен быть authority input; возможность создать его через write scope при исходном отсутствии отклоняется. Named package `run` требует существующий string `scripts[name]` в bounded immutable `package.json`, без missing-name fallback; script args допустимы только после `--`. `--cwd` поддержан только для Bun, flags других package managers отклоняются. Unknown/ambiguous flags и неподдержанные launchers (`sh`, `bash`, `dash`, `zsh`, `ruby`, `perl`, `npx`, `env`) fail-closed с `unsupported_dispatch_arguments` либо причиной отсутствующего target/binding. Это ограниченный parser, не полное воспроизведение поведения всех runtime. Native fixed executable и indirect imports/resources остаются ответственностью trusted configuration.
 
 V2 runner завершает собственную launched process group перед post-run capture при normal return, timeout, output limit и исключении. Это cleanup зарегистрированной проверки; процесс, покинувший группу через новую session, и hostile host/process isolation этим не доказываются. Builtin runner остаётся отдельным path.
+
+
+## Контракт интеграции
+
+[Контракт интеграции](INTEGRATION.md)

@@ -2,7 +2,7 @@ import unittest
 from dataclasses import replace
 from taskclosurekit.domain.contract import parse_contract
 from taskclosurekit.domain.snapshot import Snapshot, CommitSnapshotBinding
-from taskclosurekit.trust.ci import CIAdapter, VerifiedCIResult, accept_ci
+from taskclosurekit.trust.ci import CIAdapter, VerifiedCIResult, VerifiedCIRuntime, accept_ci
 from test_v2_domain import contract
 
 class FakeCI(CIAdapter):
@@ -18,7 +18,8 @@ class CISeamTests(unittest.TestCase):
         self.contract=contract();self.snapshot=Snapshot("1"*64,"2"*64,"3"*64,"4"*64,"a"*40)
         self.adapter=FakeCI()
         self.adapter.result=VerifiedCIResult(self.contract.repository,self.snapshot.commit,"b"*64,
-            "whitespace","git-index-whitespace-v1",("whitespace",),"PASS","d"*64)
+            "whitespace","git-index-whitespace-v1",("whitespace",),"PASS","d"*64,
+            VerifiedCIRuntime("verified-run",self.snapshot.digest,self.snapshot.execution,90,True,True))
 
     def accept(self):
         return accept_ci(self.adapter,"opaque-selector",self.contract,self.snapshot,5,100,
@@ -50,3 +51,8 @@ class CISeamTests(unittest.TestCase):
 
     def test_unconfigured_or_json_adapter_cannot_supply_trust(self):
         with self.assertRaises(RuntimeError):accept_ci({},"selector",self.contract,self.snapshot,5,100)
+
+    def test_success_strings_without_runtime_proof_remain_unusable(self):
+        self.adapter.result=replace(self.adapter.result,runtime_proof=None)
+        with self.assertRaisesRegex(RuntimeError,"unverified_ci_runtime"):
+            self.accept()

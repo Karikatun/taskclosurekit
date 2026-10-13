@@ -65,9 +65,9 @@ It does not test program behavior.
 For tests or builds, use a reviewed [preset configuration](examples/presets-engineering-v21.json).
 See the [engineering contract](examples/contract-engineering-v21.json) and [CLI reference](docs/CLI.md#real-engineering-checks).
 
-The target repository must have an initial commit and an ordinary `.git` directory with SHA-1 loose objects.
-The tool rejects packed objects, alternates and linked worktrees.
-A typical cloned repository can therefore be unsupported.
+The target repository must have an initial commit, SHA-1 objects, files refs and a full v2 index.
+Ordinary clones with packs and linked worktrees are supported within bounded inspection limits.
+Alternates, submodules and unsupported formats produce explicit blockers.
 Other Git restrictions appear in [safety boundaries](docs/SAFETY_BOUNDARIES.md#git).
 
 Use absolute physical paths for the contract and store.
@@ -143,7 +143,7 @@ For a fixed package version, use `npx taskclosurekit@2.1.1` instead of `npx task
 - Required reviewer independence blocks the claim without trusted proof. Imported reviews and assertions remain agent-attested.
 - Local HMAC records detect supported integrity failures. A process with equal host privileges can replace the tool, key and journal together.
 - Check execution has time, output and POSIX resource limits. Address-space limits apply only on Linux.
-- The tool discards raw check output. The journal still contains task metadata and snapshots.
+- Strict presets discard raw output; v2 policy can retain bounded redacted diagnostics. The journal contains task metadata and snapshots.
 
 Do not put credentials, source `.env` files or personal data in task inputs or evidence.
 The tool has no network CI adapter, SDK, completion hook or deployment service.
@@ -193,3 +193,8 @@ Both README files describe the same functionality.
 
 The repository has no `LICENSE` file or declared software license.
 The npm package uses `UNLICENSED`; this value does not grant a software license.
+
+
+## Integration contract
+
+[Контракт интеграции](docs/INTEGRATION.md)
