@@ -160,8 +160,8 @@ class NpmLauncherTests(unittest.TestCase):
                                      for part in Path(name).parts) or name.endswith((".pyc", ".env")) for name in names))
             manifest = json.load(payload.extractfile("package/package.json"))
             self.assertEqual(manifest["bin"], {"taskclosurekit": "taskclosurekit/launcher.cjs"})
-            self.assertEqual(manifest["version"], "2.2.0")
-            self.assertEqual(manifest["license"], "UNLICENSED")
+            self.assertEqual(manifest["version"], "2.2.1")
+            self.assertEqual(manifest["license"], "MIT")
             self.assertFalse(manifest.get("scripts"))
             for key in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies"):
                 self.assertFalse(manifest.get(key))
