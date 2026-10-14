@@ -191,8 +191,7 @@ Both README files describe the same functionality.
 
 ## License
 
-The repository has no `LICENSE` file or declared software license.
-The npm package uses `UNLICENSED`; this value does not grant a software license.
+TaskClosureKit is licensed under the [MIT License](LICENSE).
 
 
 ## Integration contract

@@ -34,7 +34,7 @@ Launcher/bootstrap включены в существующий program fingerpr
 
 Byte-identical payload с теми же relative entries, bytes, sizes и modes можно переместить между cache paths: program identity не включает absolute installation root. Это локально проверено для нового payload; сохранение Python executable path/bytes/version, Git, repository и external inputs остаётся обязательным. Изменения launcher, bootstrap, core или tests блокируют прежнее evidence. npm pack может нормализовать modes; совпадение version не доказывает совпадение payload.
 
-Node/npm и package.json не входят в runtime binding. Cache relocation не подтверждает npm provenance, registry publisher, подпись, качество либо совместимость другой runtime/platform. Матрица ограничена macOS / Python 3.9.6 / Node 22.23.1 / npm 10.9.8. Лицензия не назначена; `UNLICENSED` metadata не выдаёт лицензионных прав.
+Node/npm и package.json не входят в runtime binding. Cache relocation не подтверждает npm provenance, registry publisher, подпись, качество либо совместимость другой runtime/platform. Матрица ограничена macOS / Python 3.9.6 / Node 22.23.1 / npm 10.9.8. Исходный пакет объявляет лицензию MIT; опубликованная ранее версия npm остаётся без лицензии до отдельного выпуска.
 
 
 ## Контракт интеграции
